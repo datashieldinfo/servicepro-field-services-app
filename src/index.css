@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', 'Noto Sans Arabic', sans-serif;
+  }
+
+  [dir="rtl"] {
+    font-family: 'Noto Sans Arabic', 'Inter', sans-serif;
+  }
+}
+
+@media print {
+  body > *:not(#print-report-overlay) { display: none !important; }
+  #print-report-overlay { position: static !important; background: white !important; }
+  .no-print { display: none !important; }
+}
