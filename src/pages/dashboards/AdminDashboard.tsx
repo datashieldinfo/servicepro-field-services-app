@@ -12,8 +12,7 @@ import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
-import EditCustomerModal from '../../components/EditCustomerModal';
-import EditDeviceModal from '../../components/EditDeviceModal';
+import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import AddTechnicianModal from '../../components/AddTechnicianModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -235,7 +234,6 @@ export default function AdminDashboard() {
   }
   const [devicesModal, setDevicesModal] = useState<{ custId: string; custName: string; list: AdminDevice[] } | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);
-  const [editAdminDevice, setEditAdminDevice] = useState<AdminDevice | null>(null);
   const [expiringContracts, setExpiringContracts] = useState<{ id: string; customer_name: string; end_date: string; plan_type: string }[]>([]);
 
   // ── Appointment detail modal ─────────────────────────────────────────────
@@ -244,7 +242,7 @@ export default function AdminDashboard() {
 
   // ── Add Customer / Add Technician modal state ────────────────────────────
   const [showAddCustomer, setShowAddCustomer]     = useState(false);
-  const [editCustomer, setEditCustomer]           = useState<Customer | null>(null);
+  const [fullEditCustomerId, setFullEditCustomerId] = useState<string | null>(null);
   const [showAddTechnician, setShowAddTechnician] = useState(false);
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -750,25 +748,6 @@ export default function AdminDashboard() {
       })),
     });
     setDevicesLoading(false);
-  }
-
-  async function refetchDevicesModal() {
-    if (!devicesModal) return;
-    const { data } = await supabase
-      .from('customer_devices')
-      .select('id, device_brand, device_model, serial_number, installation_date, warranty_expires, location_in_premises')
-      .eq('customer_id', devicesModal.custId)
-      .order('installation_date', { ascending: false });
-    setDevicesModal(prev => prev ? {
-      ...prev,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      list: ((data ?? []) as any[]).map(d => ({
-        id: d.id, device_brand: d.device_brand, device_model: d.device_model ?? null,
-        serial_number: d.serial_number ?? null,
-        installation_date: d.installation_date ?? null, warranty_expires: d.warranty_expires ?? null,
-        location_in_premises: d.location_in_premises ?? null,
-      })),
-    } : null);
   }
 
   async function loadExpiringContracts() {
@@ -1654,7 +1633,7 @@ export default function AdminDashboard() {
                                 <Cpu className="w-3 h-3" />
                               </button>
                               <button
-                                onClick={() => setEditCustomer(cust)}
+                                onClick={() => setFullEditCustomerId(cust.id)}
                                 title={t('common.edit')}
                                 className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
                               >
@@ -2263,20 +2242,11 @@ export default function AdminDashboard() {
                               {dev.installation_date && <p className="text-xs text-slate-400 mt-0.5">Installed: {dev.installation_date}</p>}
                               {dev.warranty_expires && <p className="text-xs text-slate-400">Warranty: {dev.warranty_expires}</p>}
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {warrantyOk !== null && (
-                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg ${warrantyOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                                  {warrantyOk ? 'Active' : 'Expired'}
-                                </span>
-                              )}
-                              <button
-                                onClick={() => setEditAdminDevice(dev)}
-                                title={t('common.edit')}
-                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            {warrantyOk !== null && (
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0 ${warrantyOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                                {warrantyOk ? 'Active' : 'Expired'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -2312,21 +2282,12 @@ export default function AdminDashboard() {
       />
     )}
 
-    {/* ── Edit Customer Modal ── */}
-    {editCustomer && (
-      <EditCustomerModal
-        customer={editCustomer}
-        onClose={() => setEditCustomer(null)}
-        onUpdated={() => { loadData(); }}
-      />
-    )}
-
-    {/* ── Edit Device Modal ── */}
-    {editAdminDevice && (
-      <EditDeviceModal
-        device={editAdminDevice}
-        onClose={() => setEditAdminDevice(null)}
-        onUpdated={() => { refetchDevicesModal(); }}
+    {/* ── Full Customer Edit Page ── */}
+    {fullEditCustomerId && (
+      <CustomerFullEditPage
+        customerId={fullEditCustomerId}
+        onClose={() => setFullEditCustomerId(null)}
+        onSaved={() => { loadData(); }}
       />
     )}
 

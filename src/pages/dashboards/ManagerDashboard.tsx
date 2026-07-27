@@ -11,7 +11,7 @@ import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
-import EditCustomerModal from '../../components/EditCustomerModal';
+import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import EditDeviceModal from '../../components/EditDeviceModal';
 import EditContractModal from '../../components/EditContractModal';
 import Customer360Panel from '../../components/Customer360Panel';
@@ -109,7 +109,7 @@ export default function ManagerDashboard() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
-  const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
+  const [fullEditCustomerId, setFullEditCustomerId] = useState<string | null>(null);
   const [editDevice, setEditDevice] = useState<DeviceRow | null>(null);
   const [editContract, setEditContract] = useState<ContractRow | null>(null);
 
@@ -477,7 +477,7 @@ export default function ManagerDashboard() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => setEditCustomer(c)}
+                      onClick={() => setFullEditCustomerId(c.id)}
                       title={t('common.edit')}
                       className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition"
                     >
@@ -776,11 +776,11 @@ export default function ManagerDashboard() {
     {selectedCustomerId && (
       <Customer360Panel customerId={selectedCustomerId} onClose={() => setSelectedCustomerId(null)} />
     )}
-    {editCustomer && (
-      <EditCustomerModal
-        customer={editCustomer}
-        onClose={() => setEditCustomer(null)}
-        onUpdated={() => { loadCustomers(); }}
+    {fullEditCustomerId && (
+      <CustomerFullEditPage
+        customerId={fullEditCustomerId}
+        onClose={() => setFullEditCustomerId(null)}
+        onSaved={() => { loadCustomers(); }}
       />
     )}
     {editDevice && (
