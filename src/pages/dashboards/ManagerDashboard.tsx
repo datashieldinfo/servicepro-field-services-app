@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Users, Calendar, Receipt, FileText, Cpu, Package, MessageSquare, UserCog,
   Bell, ClipboardList, Search, Eye, Plus, X, Loader2, AlertTriangle, CheckCircle,
-  TrendingUp, Save,
+  TrendingUp, Save, Pencil,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -11,6 +11,7 @@ import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
+import EditCustomerModal from '../../components/EditCustomerModal';
 import Customer360Panel from '../../components/Customer360Panel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -22,6 +23,7 @@ type ManagerTab =
 interface Customer {
   id: string; name: string; phone: string; email: string; address: string;
   user_id: string | null; last_service_date: string | null; next_appointment: string | null;
+  contract_type: string | null; warranty_expires: string | null; device_install_date: string | null;
 }
 
 interface ApptRow {
@@ -105,6 +107,7 @@ export default function ManagerDashboard() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
 
   const [appointments, setAppointments] = useState<ApptRow[]>([]);
   const [apptSearch, setApptSearch] = useState('');
@@ -468,13 +471,22 @@ export default function ManagerDashboard() {
                       <p className="text-xs text-slate-500" dir="ltr">{c.phone}</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setSelectedCustomerId(c.id)}
-                    className="flex items-center gap-1.5 bg-navy/5 hover:bg-navy/10 text-navy px-3 py-2 rounded-lg text-xs font-semibold transition shrink-0"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    {t('manager.view360')}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => setEditCustomer(c)}
+                      title={t('common.edit')}
+                      className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setSelectedCustomerId(c.id)}
+                      className="flex items-center gap-1.5 bg-navy/5 hover:bg-navy/10 text-navy px-3 py-2 rounded-lg text-xs font-semibold transition"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      {t('manager.view360')}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -743,6 +755,13 @@ export default function ManagerDashboard() {
     {/* Modals / overlays */}
     {selectedCustomerId && (
       <Customer360Panel customerId={selectedCustomerId} onClose={() => setSelectedCustomerId(null)} />
+    )}
+    {editCustomer && (
+      <EditCustomerModal
+        customer={editCustomer}
+        onClose={() => setEditCustomer(null)}
+        onUpdated={() => { loadCustomers(); }}
+      />
     )}
     {showAddCustomer && (
       <AddCustomerModal onClose={() => setShowAddCustomer(false)} onCreated={() => { loadCustomers(); loadOverview(); }} />

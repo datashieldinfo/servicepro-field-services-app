@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
   X, Phone, Mail, MapPin, Calendar, ShieldCheck, Cpu, FileText, Receipt,
-  Droplets, MessageSquare, Bell, ChevronDown, ChevronUp, User, Wrench, Loader2,
+  Droplets, MessageSquare, Bell, ChevronDown, ChevronUp, User, Wrench, Loader2, Pencil,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
+import EditCustomerModal from './EditCustomerModal';
 
 interface Props {
   customerId: string;
@@ -82,6 +83,7 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
   const [expandedAppt, setExpandedAppt] = useState<string | null>(null);
   const [drillData, setDrillData] = useState<Record<string, ApptDrill>>({});
   const [drillLoading, setDrillLoading] = useState<string | null>(null);
+  const [showEdit, setShowEdit] = useState(false);
 
   useEffect(() => { loadAll(); }, [customerId]);
 
@@ -194,9 +196,20 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
               <p className="text-xs text-slate-500">{t('customer360.title')}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-slate-200 transition shrink-0">
-            <X className="w-4 h-4 text-slate-600" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {customer && (
+              <button
+                onClick={() => setShowEdit(true)}
+                title={t('common.edit')}
+                className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-blue-100 text-slate-500 hover:text-blue-600 transition"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-slate-200 transition">
+              <X className="w-4 h-4 text-slate-600" />
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -419,6 +432,24 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
           </div>
         )}
       </div>
+      {showEdit && customer && (
+        <EditCustomerModal
+          customer={{
+            id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            email: customer.email,
+            address: customer.address,
+            contract_type: customer.contract_type,
+            warranty_expires: customer.warranty_expires,
+            device_install_date: customer.device_install_date,
+            last_service_date: customer.last_service_date,
+            next_appointment: customer.next_appointment,
+          }}
+          onClose={() => setShowEdit(false)}
+          onUpdated={() => { loadAll(); }}
+        />
+      )}
     </div>
   );
 }

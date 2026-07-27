@@ -3,7 +3,7 @@ import {
   Calendar, CalendarPlus, ClipboardList, Plus, Search, Phone, Mail, Clock,
   AlertTriangle, CheckCircle, Package, ChevronRight, Zap, Wrench, MessageSquare,
   Droplets, HelpCircle, X, Loader2, SlidersHorizontal, Download, ChevronDown,
-  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle,
+  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Pencil,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -12,6 +12,7 @@ import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
+import EditCustomerModal from '../../components/EditCustomerModal';
 import AddTechnicianModal from '../../components/AddTechnicianModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -35,6 +36,9 @@ interface Customer {
   user_id: string | null;
   last_service_date: string | null;
   next_appointment: string | null;
+  contract_type: string | null;
+  warranty_expires: string | null;
+  device_install_date: string | null;
 }
 
 interface InventoryItem {
@@ -238,6 +242,7 @@ export default function AdminDashboard() {
 
   // ── Add Customer / Add Technician modal state ────────────────────────────
   const [showAddCustomer, setShowAddCustomer]     = useState(false);
+  const [editCustomer, setEditCustomer]           = useState<Customer | null>(null);
   const [showAddTechnician, setShowAddTechnician] = useState(false);
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -1626,6 +1631,13 @@ export default function AdminDashboard() {
                               >
                                 <Cpu className="w-3 h-3" />
                               </button>
+                              <button
+                                onClick={() => setEditCustomer(cust)}
+                                title={t('common.edit')}
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2266,6 +2278,15 @@ export default function AdminDashboard() {
       <AddCustomerModal
         onClose={() => setShowAddCustomer(false)}
         onCreated={() => { loadData(); }}
+      />
+    )}
+
+    {/* ── Edit Customer Modal ── */}
+    {editCustomer && (
+      <EditCustomerModal
+        customer={editCustomer}
+        onClose={() => setEditCustomer(null)}
+        onUpdated={() => { loadData(); }}
       />
     )}
 
