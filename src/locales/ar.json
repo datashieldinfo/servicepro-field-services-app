@@ -455,7 +455,8 @@
     "followupRecommended": "يُنصح بزيارة متابعة",
     "noPartsUsed": "لم تُستخدم قطع",
     "invoices": "الفواتير",
-    "serviceRequests": "طلبات الخدمة"
+    "serviceRequests": "طلبات الخدمة",
+    "notificationsSent": "الإشعارات المرسلة"
   },
   "invoice": {
     "title": "فاتورة",

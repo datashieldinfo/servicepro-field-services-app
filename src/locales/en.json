@@ -455,7 +455,8 @@
     "followupRecommended": "Follow-up recommended",
     "noPartsUsed": "No parts used",
     "invoices": "Invoices",
-    "serviceRequests": "Service Requests"
+    "serviceRequests": "Service Requests",
+    "notificationsSent": "Notifications Sent"
   },
   "invoice": {
     "title": "Invoice",
