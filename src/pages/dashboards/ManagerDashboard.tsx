@@ -12,6 +12,8 @@ import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
 import EditCustomerModal from '../../components/EditCustomerModal';
+import EditDeviceModal from '../../components/EditDeviceModal';
+import EditContractModal from '../../components/EditContractModal';
 import Customer360Panel from '../../components/Customer360Panel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -108,6 +110,8 @@ export default function ManagerDashboard() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
+  const [editDevice, setEditDevice] = useState<DeviceRow | null>(null);
+  const [editContract, setEditContract] = useState<ContractRow | null>(null);
 
   const [appointments, setAppointments] = useState<ApptRow[]>([]);
   const [apptSearch, setApptSearch] = useState('');
@@ -591,7 +595,16 @@ export default function ManagerDashboard() {
                     <p className="font-semibold text-slate-900 text-sm">{c.customers?.name ?? '—'} <span className="text-slate-400 font-normal capitalize">· {c.plan_type}</span></p>
                     <p className="text-xs text-slate-500">{fmtDate(c.start_date)} → {fmtDate(c.end_date)} · {c.visits_used}/{c.visits_included} {t('customer360.visits')} · {c.price_jod} {t('invoice.jod')}</p>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 ${statusColor[c.status] ?? 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold ${statusColor[c.status] ?? 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
+                    <button
+                      onClick={() => setEditContract(c)}
+                      title={t('common.edit')}
+                      className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -618,6 +631,13 @@ export default function ManagerDashboard() {
                     <p className="font-semibold text-slate-900 text-sm">{d.customers?.name ?? '—'} <span className="text-slate-400 font-normal">· {d.device_brand}</span></p>
                     <p className="text-xs text-slate-500">{d.serial_number ? `S/N ${d.serial_number} · ` : ''}{t('customer360.installDate')}: {fmtDate(d.installation_date)} · {t('customer360.warrantyExpires')}: {fmtDate(d.warranty_expires)}</p>
                   </div>
+                  <button
+                    onClick={() => setEditDevice(d)}
+                    title={t('common.edit')}
+                    className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition shrink-0"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -761,6 +781,20 @@ export default function ManagerDashboard() {
         customer={editCustomer}
         onClose={() => setEditCustomer(null)}
         onUpdated={() => { loadCustomers(); }}
+      />
+    )}
+    {editDevice && (
+      <EditDeviceModal
+        device={editDevice}
+        onClose={() => setEditDevice(null)}
+        onUpdated={() => { loadDevices(); }}
+      />
+    )}
+    {editContract && (
+      <EditContractModal
+        contract={editContract}
+        onClose={() => setEditContract(null)}
+        onUpdated={() => { loadContracts(); loadOverview(); }}
       />
     )}
     {showAddCustomer && (

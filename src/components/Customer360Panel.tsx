@@ -6,6 +6,9 @@ import {
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import EditCustomerModal from './EditCustomerModal';
+import EditDeviceModal from './EditDeviceModal';
+import EditContractModal from './EditContractModal';
+import EditFilterStatusModal from './EditFilterStatusModal';
 
 interface Props {
   customerId: string;
@@ -84,6 +87,9 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
   const [drillData, setDrillData] = useState<Record<string, ApptDrill>>({});
   const [drillLoading, setDrillLoading] = useState<string | null>(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [editDevice, setEditDevice] = useState<DeviceRow | null>(null);
+  const [editContract, setEditContract] = useState<ContractRow | null>(null);
+  const [editFilter, setEditFilter] = useState<FilterRow | null>(null);
 
   useEffect(() => { loadAll(); }, [customerId]);
 
@@ -254,8 +260,15 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
                 ) : (
                   <div className="grid sm:grid-cols-2 gap-3">
                     {devices.map(d => (
-                      <div key={d.id} className="bg-white rounded-xl border border-slate-100 p-3 text-xs space-y-1">
-                        <p className="font-semibold text-slate-900">{d.device_brand}{d.device_model ? ` — ${d.device_model}` : ''}</p>
+                      <div key={d.id} className="bg-white rounded-xl border border-slate-100 p-3 text-xs space-y-1 relative">
+                        <button
+                          onClick={() => setEditDevice(d)}
+                          title={t('common.edit')}
+                          className="absolute top-2 end-2 w-6 h-6 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <p className="font-semibold text-slate-900 pe-6">{d.device_brand}{d.device_model ? ` — ${d.device_model}` : ''}</p>
                         {d.serial_number && <p className="text-slate-500" dir="ltr">S/N: {d.serial_number}</p>}
                         <p className="text-slate-500">{t('customer360.installDate')}: {fmtDate(d.installation_date)}</p>
                         <p className="text-slate-500">{t('customer360.warrantyExpires')}: {fmtDate(d.warranty_expires)}</p>
@@ -279,7 +292,16 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
                           <p className="font-semibold text-slate-900 capitalize">{c.plan_type}</p>
                           <p className="text-slate-500">{fmtDate(c.start_date)} → {fmtDate(c.end_date)} · {c.visits_used}/{c.visits_included} {t('customer360.visits')} · {c.price_jod} {t('invoice.jod')}</p>
                         </div>
-                        <span className={`px-2 py-1 rounded-lg font-semibold ${statusColor[c.status] ?? 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-1 rounded-lg font-semibold ${statusColor[c.status] ?? 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
+                          <button
+                            onClick={() => setEditContract(c)}
+                            title={t('common.edit')}
+                            className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -400,9 +422,18 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
                   <div className="grid sm:grid-cols-2 gap-3">
                     {filters.map(f => (
                       <div key={f.id} className="bg-white rounded-xl border border-slate-100 p-3 text-xs space-y-1">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <p className="font-semibold text-slate-900">{f.location}</p>
-                          <span className={`font-bold ${f.health_percent < 25 ? 'text-red-600' : f.health_percent < 60 ? 'text-amber-600' : 'text-green-600'}`}>{f.health_percent}%</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`font-bold ${f.health_percent < 25 ? 'text-red-600' : f.health_percent < 60 ? 'text-amber-600' : 'text-green-600'}`}>{f.health_percent}%</span>
+                            <button
+                              onClick={() => setEditFilter(f)}
+                              title={t('common.edit')}
+                              className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-slate-500">{f.filter_type}</p>
                         <p className="text-slate-500">{t('customer.nextDue')}: {fmtDate(f.next_due)}</p>
@@ -447,6 +478,27 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
             next_appointment: customer.next_appointment,
           }}
           onClose={() => setShowEdit(false)}
+          onUpdated={() => { loadAll(); }}
+        />
+      )}
+      {editDevice && (
+        <EditDeviceModal
+          device={editDevice}
+          onClose={() => setEditDevice(null)}
+          onUpdated={() => { loadAll(); }}
+        />
+      )}
+      {editContract && (
+        <EditContractModal
+          contract={editContract}
+          onClose={() => setEditContract(null)}
+          onUpdated={() => { loadAll(); }}
+        />
+      )}
+      {editFilter && (
+        <EditFilterStatusModal
+          filter={editFilter}
+          onClose={() => setEditFilter(null)}
           onUpdated={() => { loadAll(); }}
         />
       )}
