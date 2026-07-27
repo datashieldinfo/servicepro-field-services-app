@@ -9,6 +9,7 @@ import OwnerDashboard from './pages/dashboards/OwnerDashboard';
 import TechnicianDashboard from './pages/dashboards/TechnicianDashboard';
 import AdminDashboard from './pages/dashboards/AdminDashboard';
 import CustomerDashboard from './pages/dashboards/CustomerDashboard';
+import ManagerDashboard from './pages/dashboards/ManagerDashboard';
 import ReportsPage from './pages/ReportsPage';
 
 function RootRedirect() {
@@ -20,6 +21,7 @@ function RootRedirect() {
     technician: '/dashboard/technician',
     admin: '/dashboard/admin',
     customer: '/dashboard/customer',
+    manager: '/dashboard/manager',
   };
   return <Navigate to={roleRoutes[profile?.role ?? 'customer']} replace />;
 }
@@ -69,6 +71,14 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRole="customer">
                   <ErrorBoundary><CustomerDashboard /></ErrorBoundary>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/manager"
+              element={
+                <ProtectedRoute allowedRole="manager">
+                  <ErrorBoundary><ManagerDashboard /></ErrorBoundary>
                 </ProtectedRoute>
               }
             />

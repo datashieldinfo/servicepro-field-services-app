@@ -22,7 +22,8 @@
     "owner": "مدير عام",
     "technician": "فني",
     "admin": "مسؤول",
-    "customer": "عميل"
+    "customer": "عميل",
+    "manager": "مدير مكتب"
   },
   "login": {
     "welcome": "مرحباً بعودتك",
@@ -38,10 +39,12 @@
     "techDesc": "إدارة العمل الميداني",
     "adminDesc": "العمليات والجدولة",
     "customerDesc": "بوابة الخدمة الذاتية",
+    "managerDesc": "الإدارة المكتبية وملف العميل الشامل",
     "ownerLabel": "المدير العام",
     "techLabel": "فني",
     "adminLabel": "مسؤول المكتب",
-    "customerLabel": "عميل"
+    "customerLabel": "عميل",
+    "managerLabel": "مدير مكتب"
   },
   "common": {
     "save": "حفظ",
@@ -402,6 +405,57 @@
   },
   "aria": {
     "loading": "جاري تحميل المحتوى"
+  },
+  "manager": {
+    "title": "الإدارة المكتبية",
+    "subtitle": "رؤية شاملة للعملاء والعقود والفواتير والعمليات",
+    "tabOverview": "نظرة عامة",
+    "tabCustomers": "العملاء",
+    "tabAppointments": "المواعيد",
+    "tabInvoices": "الفواتير",
+    "tabContracts": "العقود",
+    "tabDevices": "الأجهزة",
+    "tabInventory": "المخزون",
+    "tabRequests": "طلبات الخدمة",
+    "tabTeam": "الفريق",
+    "tabNotifications": "الإشعارات",
+    "tabActivity": "سجل النشاطات",
+    "kpiCustomers": "إجمالي العملاء",
+    "kpiActiveContracts": "العقود الفعالة",
+    "kpiPendingInvoices": "فواتير معلقة",
+    "kpiLowStock": "أصناف منخفضة المخزون",
+    "kpiPendingRequests": "طلبات معلقة",
+    "kpiTodayAppts": "مواعيد اليوم",
+    "kpiExpiringContracts": "عقود قاربت على الانتهاء",
+    "view360": "عرض الملف الشامل",
+    "newContract": "عقد جديد",
+    "newDevice": "جهاز جديد",
+    "autoRenew": "تجديد تلقائي",
+    "planType": "نوع الباقة",
+    "deviceModel": "موديل الجهاز",
+    "serialNumber": "الرقم التسلسلي",
+    "locationInPremises": "الموقع داخل المنزل"
+  },
+  "customer360": {
+    "title": "الملف الشامل للعميل",
+    "masterData": "البيانات الأساسية",
+    "transactionalData": "البيانات التشغيلية",
+    "contractType": "نوع العقد",
+    "warrantyExpires": "انتهاء الضمان",
+    "installDate": "تاريخ التركيب",
+    "memberSince": "عميل منذ",
+    "linkedAccount": "الحساب المرتبط",
+    "noLinkedAccount": "لا يوجد حساب بوابة مرتبط",
+    "devices": "الأجهزة المسجّلة",
+    "contracts": "العقود",
+    "visits": "زيارات",
+    "appointments": "سجل المواعيد",
+    "unassigned": "غير معيّن",
+    "photos": "الصور",
+    "followupRecommended": "يُنصح بزيارة متابعة",
+    "noPartsUsed": "لم تُستخدم قطع",
+    "invoices": "الفواتير",
+    "serviceRequests": "طلبات الخدمة"
   },
   "invoice": {
     "title": "فاتورة",

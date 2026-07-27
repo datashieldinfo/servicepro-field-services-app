@@ -12,6 +12,7 @@ const ROLE_CONFIG: Record<UserRole, { bg: string; text: string; dot: string }> =
   technician: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-600' },
   admin: { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-600' },
   customer: { bg: 'bg-teal-100', text: 'text-teal-700', dot: 'bg-teal-600' },
+  manager: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-600' },
 };
 
 export default function Navbar() {
