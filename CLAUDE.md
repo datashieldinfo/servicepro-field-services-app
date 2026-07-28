@@ -16,7 +16,7 @@ There are no tests. There is no test runner configured.
 
 ## Architecture
 
-**ServisGo / BioFamily Jordan** is a field-service management SPA (water filter maintenance) with four distinct user roles, each with its own dashboard.
+**ServisGo / BioFamily Jordan** is a field-service management SPA (water filter maintenance) with five distinct user roles, each with its own dashboard.
 
 ### Role → Route mapping
 
@@ -25,6 +25,7 @@ There are no tests. There is no test runner configured.
 | `owner` | `/dashboard/owner` | `OwnerDashboard.tsx` |
 | `technician` | `/dashboard/technician` | `TechnicianDashboard.tsx` |
 | `admin` | `/dashboard/admin` | `AdminDashboard.tsx` |
+| `manager` | `/dashboard/manager` | `ManagerDashboard.tsx` |
 | `customer` | `/dashboard/customer` | `CustomerDashboard.tsx` |
 
 `App.tsx` wraps everything in `<AuthProvider>` → `<ToastProvider>`. The `<RootRedirect>` component reads `profile.role` from `AuthContext` and redirects to the correct dashboard. `<ProtectedRoute allowedRole="…">` enforces role gating on every dashboard route.
@@ -113,8 +114,14 @@ One shape, one table, one UI — every role that can add customers renders the s
   `createCustomersBulk()` inserts imported rows directly, isolating bad rows on batch failure.
 - **`src/lib/geocoding.ts`** — OpenStreetMap/Nominatim place search + reverse geocoding,
   `navigator.geolocation`, and a paste-parser for coordinates / Google Maps links. No API key, fails soft.
+- **`src/components/CustomerFields.tsx`** — the fieldset itself (record type → identity → contact →
+  structured address → map pin → notes). Rendered by **both** `AddCustomerModal` and
+  `CustomerFullEditPage`, so creating and editing a customer are the same form for every role.
 - **`AddCustomerModal`** — record-type selector, mandatory phone with dial-code picklist, structured
   address, `LocationPicker` map pin. Phone + name (+ city) are the only required fields.
+- **`CustomerFullEditPage`** — the same fieldset plus contract/warranty dates, devices, contracts and
+  filter status; hydrates via `fromCustomerRow()` and saves via `toCustomerUpdate()` (which preserves
+  `source`).
 - **`ImportCustomersModal`** — CSV template download/parse, `.vcf` (vCard 2.1/3.0/4.0, incl.
   quoted-printable) parse, and the mobile Contact Picker API when the browser exposes it. Preview table
   allows per-row edit/exclude before import. `.xlsx` is **not** parsed — users are told to save as CSV.

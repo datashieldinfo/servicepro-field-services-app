@@ -3,7 +3,7 @@ import {
   Calendar, CalendarPlus, ClipboardList, Plus, Search, Phone, Mail, Clock,
   AlertTriangle, CheckCircle, Package, ChevronRight, Zap, Wrench, MessageSquare,
   Droplets, HelpCircle, X, Loader2, SlidersHorizontal, Download, ChevronDown,
-  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload,
+  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload, Pencil,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -12,6 +12,7 @@ import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
+import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import AddTechnicianModal from '../../components/AddTechnicianModal';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 
@@ -36,6 +37,9 @@ interface Customer {
   user_id: string | null;
   last_service_date: string | null;
   next_appointment: string | null;
+  contract_type: string | null;
+  warranty_expires: string | null;
+  device_install_date: string | null;
 }
 
 interface InventoryItem {
@@ -229,7 +233,7 @@ export default function AdminDashboard() {
     installation_date: string | null; warranty_expires: string | null;
     location_in_premises: string | null;
   }
-  const [devicesModal, setDevicesModal] = useState<{ custName: string; list: AdminDevice[] } | null>(null);
+  const [devicesModal, setDevicesModal] = useState<{ custId: string; custName: string; list: AdminDevice[] } | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [expiringContracts, setExpiringContracts] = useState<{ id: string; customer_name: string; end_date: string; plan_type: string }[]>([]);
 
@@ -239,6 +243,7 @@ export default function AdminDashboard() {
 
   // ── Add Customer / Add Technician modal state ────────────────────────────
   const [showAddCustomer, setShowAddCustomer]     = useState(false);
+  const [fullEditCustomerId, setFullEditCustomerId] = useState<string | null>(null);
   const [showAddTechnician, setShowAddTechnician] = useState(false);
   const [showImportCustomers, setShowImportCustomers] = useState(false);
 
@@ -727,13 +732,14 @@ export default function AdminDashboard() {
 
   async function handleViewDevices(cust: Customer) {
     setDevicesLoading(true);
-    setDevicesModal({ custName: cust.name, list: [] });
+    setDevicesModal({ custId: cust.id, custName: cust.name, list: [] });
     const { data } = await supabase
       .from('customer_devices')
       .select('id, device_brand, device_model, serial_number, installation_date, warranty_expires, location_in_premises')
       .eq('customer_id', cust.id)
       .order('installation_date', { ascending: false });
     setDevicesModal({
+      custId: cust.id,
       custName: cust.name,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       list: ((data ?? []) as any[]).map(d => ({
@@ -1636,6 +1642,13 @@ export default function AdminDashboard() {
                               >
                                 <Cpu className="w-3 h-3" />
                               </button>
+                              <button
+                                onClick={() => setFullEditCustomerId(cust.id)}
+                                title={t('common.edit')}
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2285,6 +2298,15 @@ export default function AdminDashboard() {
       <ImportCustomersModal
         onClose={() => setShowImportCustomers(false)}
         onImported={() => { loadData(); }}
+      />
+    )}
+
+    {/* ── Full Customer Edit Page ── */}
+    {fullEditCustomerId && (
+      <CustomerFullEditPage
+        customerId={fullEditCustomerId}
+        onClose={() => setFullEditCustomerId(null)}
+        onSaved={() => { loadData(); }}
       />
     )}
 

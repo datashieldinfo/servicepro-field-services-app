@@ -381,8 +381,16 @@ export default function TechnicianDashboard() {
         address: selectedJob.address,
         notes: followup?.reason ? `متابعة: ${followup.reason}` : '',
       });
-      await supabase.from('customers').update({ next_appointment: nextVisit }).eq('id', selectedJob.customer_id);
-      showToast(t('technician.nextVisitCreated'), 'success');
+      const { error: nextApptError } = await supabase
+        .from('customers')
+        .update({ next_appointment: nextVisit })
+        .eq('id', selectedJob.customer_id);
+      if (nextApptError) {
+        console.error('[TechnicianDashboard] failed to update customer next_appointment:', nextApptError.message);
+        showToast(t('toast.error'), 'error');
+      } else {
+        showToast(t('technician.nextVisitCreated'), 'success');
+      }
     }
 
     await supabase.from('activity_log').insert({

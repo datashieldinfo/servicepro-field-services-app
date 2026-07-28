@@ -22,7 +22,8 @@
     "owner": "Super Admin",
     "technician": "Technician",
     "admin": "Admin",
-    "customer": "Customer"
+    "customer": "Customer",
+    "manager": "Manager"
   },
   "login": {
     "welcome": "Welcome back",
@@ -38,10 +39,12 @@
     "techDesc": "Field work & job management",
     "adminDesc": "Operations & scheduling",
     "customerDesc": "Self-service portal",
+    "managerDesc": "Back-office & Customer 360",
     "ownerLabel": "Super Admin",
     "techLabel": "Technician",
     "adminLabel": "Office Admin",
-    "customerLabel": "Customer"
+    "customerLabel": "Customer",
+    "managerLabel": "Manager"
   },
   "common": {
     "save": "Save",
@@ -403,6 +406,58 @@
   },
   "aria": {
     "loading": "Loading content"
+  },
+  "manager": {
+    "title": "Back Office",
+    "subtitle": "Full visibility into customers, contracts, invoices & operations",
+    "tabOverview": "Overview",
+    "tabCustomers": "Customers",
+    "tabAppointments": "Appointments",
+    "tabInvoices": "Invoices",
+    "tabContracts": "Contracts",
+    "tabDevices": "Devices",
+    "tabInventory": "Inventory",
+    "tabRequests": "Service Requests",
+    "tabTeam": "Team",
+    "tabNotifications": "Notifications",
+    "tabActivity": "Activity Log",
+    "kpiCustomers": "Total Customers",
+    "kpiActiveContracts": "Active Contracts",
+    "kpiPendingInvoices": "Pending Invoices",
+    "kpiLowStock": "Low Stock Items",
+    "kpiPendingRequests": "Pending Requests",
+    "kpiTodayAppts": "Today's Appointments",
+    "kpiExpiringContracts": "Expiring Contracts",
+    "view360": "View 360",
+    "newContract": "New Contract",
+    "newDevice": "New Device",
+    "autoRenew": "Auto-renew",
+    "planType": "Plan Type",
+    "deviceModel": "Device Model",
+    "serialNumber": "Serial Number",
+    "locationInPremises": "Location in Premises"
+  },
+  "customer360": {
+    "title": "Customer 360",
+    "masterData": "Master Data",
+    "transactionalData": "Transactional Data",
+    "contractType": "Contract Type",
+    "warrantyExpires": "Warranty Expires",
+    "installDate": "Install Date",
+    "memberSince": "Member Since",
+    "linkedAccount": "Linked Account",
+    "noLinkedAccount": "No linked portal account",
+    "devices": "Registered Devices",
+    "contracts": "Contracts",
+    "visits": "visits",
+    "appointments": "Appointment History",
+    "unassigned": "Unassigned",
+    "photos": "Photos",
+    "followupRecommended": "Follow-up recommended",
+    "noPartsUsed": "No parts used",
+    "invoices": "Invoices",
+    "serviceRequests": "Service Requests",
+    "notificationsSent": "Notifications Sent"
   },
   "invoice": {
     "title": "Invoice",

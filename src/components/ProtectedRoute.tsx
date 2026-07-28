@@ -29,6 +29,7 @@ export function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
       technician: '/dashboard/technician',
       admin: '/dashboard/admin',
       customer: '/dashboard/customer',
+      manager: '/dashboard/manager',
     };
     return <Navigate to={roleRoutes[profile?.role ?? 'customer']} replace />;
   }

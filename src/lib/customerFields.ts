@@ -340,6 +340,25 @@ export function normalizePhone(raw: string): string {
   return digits.replace(/^0+/, '');
 }
 
+/** "962" / "00962" / "+962 " → "+962" */
+export function normalizeDial(value: string): string {
+  const digits = (value || '').replace(/[^\d]/g, '').replace(/^00/, '');
+  return digits ? `+${digits}` : DEFAULT_COUNTRY_CODE;
+}
+
+/** Splits an international number into a known dial code + local part. */
+export function splitPhone(raw: string): { country_code: string; phone: string } {
+  const trimmed = (raw || '').trim().replace(/[\s()-]/g, '');
+  if (trimmed.startsWith('+') || trimmed.startsWith('00')) {
+    const intl = trimmed.startsWith('00') ? `+${trimmed.slice(2)}` : trimmed;
+    const match = [...COUNTRY_CODES]
+      .sort((a, b) => b.dial.length - a.dial.length)
+      .find(c => intl.startsWith(c.dial));
+    if (match) return { country_code: match.dial, phone: normalizePhone(intl.slice(match.dial.length)) };
+  }
+  return { country_code: DEFAULT_COUNTRY_CODE, phone: normalizePhone(trimmed) };
+}
+
 export function fullPhone(countryCode: string, phone: string): string {
   const local = normalizePhone(phone);
   return local ? `${countryCode}${local}` : '';
@@ -441,6 +460,51 @@ export interface ValidateOptions {
   /** Bulk imports rarely carry a contact person — only the form demands one. */
   requireContactPerson?: boolean;
   requireCity?: boolean;
+}
+
+/**
+ * Form → `customers` row for an UPDATE. `source` is left out on purpose:
+ * it records how the record was first captured and must survive edits.
+ */
+export function toCustomerUpdate(f: CustomerForm, isAr = false) {
+  const { source, ...row } = toCustomerRow(f, 'manual', isAr);
+  void source;
+  return row;
+}
+
+/** `customers` row → form state, for the edit screens. */
+export function fromCustomerRow(row: Record<string, unknown>): CustomerForm {
+  const form = emptyCustomerForm();
+  const str = (key: string) => (row[key] == null ? '' : String(row[key]));
+
+  form.customer_type = str('customer_type') === 'corporate' ? 'corporate' : 'individual';
+  form.company_name  = str('company_name');
+  form.full_name     = str('full_name') || (form.customer_type === 'individual' ? str('name') : '');
+  if (form.customer_type === 'corporate' && !form.company_name) form.company_name = str('name');
+
+  const stored = str('phone');
+  const split = splitPhone(stored);
+  form.country_code = str('country_code') ? normalizeDial(str('country_code')) : split.country_code;
+  form.phone = stored.startsWith('+') || stored.startsWith('00')
+    ? split.phone
+    : normalizePhone(stored);
+
+  const copy: (keyof CustomerForm)[] = [
+    'email', 'state', 'city', 'area', 'street', 'villa_name', 'villa_number',
+    'building_name', 'building_number', 'flat_number', 'location_label', 'notes',
+    'trade_name', 'industry', 'commercial_reg_no', 'tax_number', 'payment_terms',
+    'billing_email', 'contact_person_name', 'contact_person_title',
+    'contact_person_phone', 'contact_person_email',
+  ];
+  copy.forEach(key => { (form as unknown as Record<string, string>)[key] = str(key); });
+
+  const buildingType = str('building_type');
+  form.building_type = buildingType === 'villa' || buildingType === 'building' ? buildingType : '';
+  form.branch_count = row.branch_count == null ? '' : String(row.branch_count);
+  form.latitude  = row.latitude  == null ? '' : String(row.latitude);
+  form.longitude = row.longitude == null ? '' : String(row.longitude);
+
+  return form;
 }
 
 /** Field-level validation shared by the create form and the importer. */

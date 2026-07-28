@@ -6,14 +6,17 @@
  */
 
 import {
-  COUNTRY_CODES,
   DEFAULT_COUNTRY_CODE,
   emptyCustomerForm,
+  normalizeDial,
   normalizePhone,
+  splitPhone,
   type BuildingType,
   type CustomerForm,
   type CustomerType,
 } from './customerFields';
+
+export { splitPhone } from './customerFields';
 
 /* ── Template ────────────────────────────────────────────────────────────── */
 
@@ -155,25 +158,6 @@ function headerKey(header: string): keyof CustomerForm | null {
     remarks: 'notes',
   };
   return aliases[norm] ?? null;
-}
-
-/** "962" / "00962" / "+962 " → "+962" */
-export function normalizeDial(value: string): string {
-  const digits = (value || '').replace(/[^\d]/g, '').replace(/^00/, '');
-  return digits ? `+${digits}` : DEFAULT_COUNTRY_CODE;
-}
-
-/** Splits an international number into a known dial code + local part. */
-export function splitPhone(raw: string): { country_code: string; phone: string } {
-  const trimmed = (raw || '').trim().replace(/[\s()-]/g, '');
-  if (trimmed.startsWith('+') || trimmed.startsWith('00')) {
-    const intl = trimmed.startsWith('00') ? `+${trimmed.slice(2)}` : trimmed;
-    const match = [...COUNTRY_CODES]
-      .sort((a, b) => b.dial.length - a.dial.length)
-      .find(c => intl.startsWith(c.dial));
-    if (match) return { country_code: match.dial, phone: normalizePhone(intl.slice(match.dial.length)) };
-  }
-  return { country_code: DEFAULT_COUNTRY_CODE, phone: normalizePhone(trimmed) };
 }
 
 export interface ParsedRow extends CustomerForm {

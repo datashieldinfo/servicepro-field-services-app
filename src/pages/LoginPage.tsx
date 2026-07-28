@@ -73,6 +73,7 @@ const ROLE_ROUTES: Record<UserRole, string> = {
   technician: '/dashboard/technician',
   admin: '/dashboard/admin',
   customer: '/dashboard/customer',
+  manager: '/dashboard/manager',
 };
 
 export default function LoginPage() {
@@ -90,6 +91,7 @@ export default function LoginPage() {
     { role: 'owner', email: 'owner@demo.com', color: 'bg-blue-600 hover:bg-blue-700', descKey: 'login.ownerDesc', labelKey: 'login.ownerLabel' },
     { role: 'technician', email: 'tech@demo.com', color: 'bg-green-600 hover:bg-green-700', descKey: 'login.techDesc', labelKey: 'login.techLabel' },
     { role: 'admin', email: 'admin@demo.com', color: 'bg-orange-600 hover:bg-orange-700', descKey: 'login.adminDesc', labelKey: 'login.adminLabel' },
+    { role: 'manager', email: 'manager@demo.com', color: 'bg-purple-600 hover:bg-purple-700', descKey: 'login.managerDesc', labelKey: 'login.managerLabel' },
     { role: 'customer', email: 'customer@demo.com', color: 'bg-violet-600 hover:bg-violet-700', descKey: 'login.customerDesc', labelKey: 'login.customerLabel' },
   ];
 
@@ -131,6 +133,7 @@ export default function LoginPage() {
         technician: 'أحمد الحمداني',
         admin: 'رنا العمري',
         customer: 'خالد الزيود',
+        manager: 'ليلى النابلسي',
       };
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: account.email,
