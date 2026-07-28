@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   X, Loader2, User, CheckCircle, Building2, Upload, Copy, Check, CalendarPlus,
-  Link as LinkIcon, MessageCircle, Mail, FileSpreadsheet, PackagePlus,
+  Link as LinkIcon, MessageCircle, Mail, FileSpreadsheet, PackagePlus, AlertTriangle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from './Toast';
@@ -16,6 +16,7 @@ import {
   type CustomerForm,
 } from '../lib/customerFields';
 import { createCustomer } from '../lib/customerService';
+import { supabase } from '../lib/supabase';
 
 interface Props {
   onClose: () => void;
@@ -37,6 +38,7 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
   >(null);
   const [copied, setCopied] = useState<'password' | 'link' | null>(null);
   const [nextStep, setNextStep] = useState<'offer' | 'installation' | 'visit' | null>(null);
+  const [duplicate, setDuplicate] = useState<{ id: string; name: string; phone: string } | null>(null);
   const [convertFrom, setConvertFrom] = useState<
     { quotationId: string; devices: { device_brand: string; catalog_id: string }[] } | null
   >(null);
@@ -67,6 +69,27 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
     }
 
     setSaving(true);
+
+    /*
+      A record that looks saved but cannot be found gets entered twice. Check
+      the phone — the one mandatory field — before writing another one.
+    */
+    if (!duplicate) {
+      const digits = `${form.country_code}${form.phone}`.replace(/\D/g, '').slice(-9);
+      const { data: existing } = await supabase
+        .from('customers')
+        .select('id, name, phone')
+        .ilike('phone', `%${digits}`)
+        .limit(1);
+
+      if (existing?.length) {
+        setDuplicate(existing[0] as { id: string; name: string; phone: string });
+        setSaving(false);
+        showToast(t('customerForm.duplicateWarning'), 'warning');
+        return;
+      }
+    }
+
     const result = await createCustomer(form, 'manual', isAr);
 
     if (!result.ok) {
@@ -302,6 +325,19 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
                 <p>✓ {t('customerForm.whatHappensNoLogin')}</p>
               )}
             </div>
+
+            {duplicate && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                <p className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4" />
+                  {t('customerForm.duplicateTitle')}
+                </p>
+                <p className="text-xs text-amber-800">
+                  {t('customerForm.duplicateBody', { name: duplicate.name, phone: duplicate.phone })}
+                </p>
+                <p className="text-[11px] text-amber-700">{t('customerForm.duplicateHint')}</p>
+              </div>
+            )}
 
             {/* Actions */}
             <div className="flex gap-3 pt-1">

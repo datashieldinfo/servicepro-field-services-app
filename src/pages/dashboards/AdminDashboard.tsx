@@ -3,7 +3,8 @@ import {
   Calendar, CalendarPlus, ClipboardList, Plus, Search, Phone, Mail, Clock,
   AlertTriangle, CheckCircle, Package, ChevronRight, Zap, Wrench, MessageSquare,
   Droplets, HelpCircle, X, Loader2, SlidersHorizontal, Download, ChevronDown,
-  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload, Pencil,
+  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload, Pencil, FileText,
+  FileSpreadsheet, PackagePlus,
   PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +18,8 @@ import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import AddTechnicianModal from '../../components/AddTechnicianModal';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import ScheduleVisitModal from '../../components/ScheduleVisitModal';
+import NewInstallationModal from '../../components/NewInstallationModal';
+import QuotationModal from '../../components/QuotationModal';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { TRIGGER_TO_VISIT_TYPE, type VisitType } from '../../lib/visitFields';
 
@@ -67,6 +70,13 @@ interface Appointment {
   service_type: string;
   visit_type: string;
   device_id: string | null;
+  device: {
+    device_brand: string;
+    device_model: string | null;
+    serial_number: string | null;
+    location_in_premises: string | null;
+    warranty_expires: string | null;
+  } | null;
   confirmed: boolean;
   confirmed_at: string | null;
   scheduled_at: string;
@@ -101,6 +111,9 @@ function normaliseAppt(raw: Record<string, unknown>): Appointment {
     technician: Array.isArray(raw.technician)
       ? ((raw.technician as { full_name: string }[])[0] ?? null)
       : (raw.technician as { full_name: string } | null),
+    device: Array.isArray(raw.device)
+      ? ((raw.device as Appointment['device'][])[0] ?? null)
+      : (raw.device as Appointment['device']),
   };
 }
 
@@ -150,6 +163,11 @@ export default function AdminDashboard() {
 
   // What the shared scheduler opens with
   const [visitPreset, setVisitPreset] = useState<VisitPreset>({});
+  const [offerFor, setOfferFor] = useState<Customer | null>(null);
+  const [installFor, setInstallFor] = useState<Customer | null>(null);
+  const [convertFrom, setConvertFrom] = useState<
+    { quotationId: string; devices: { device_brand: string; catalog_id: string }[] } | null
+  >(null);
 
   // Inventory inline editing
   const [editingInventoryId, setEditingInventoryId]   = useState<string | null>(null);
@@ -308,7 +326,7 @@ export default function AdminDashboard() {
     // No status filter here — filtering is client-side via apptStatusFilter.
     let q = supabase
       .from('appointments')
-      .select('id, service_type, visit_type, device_id, confirmed, confirmed_at, scheduled_at, status, address, notes, approval_notes, customer_id, technician_id, customers(name, address, phone)')
+      .select('id, service_type, visit_type, device_id, confirmed, confirmed_at, scheduled_at, status, address, notes, approval_notes, customer_id, technician_id, customers(name, address, phone), device:customer_devices(device_brand, device_model, serial_number, location_in_premises, warranty_expires)')
       .order('scheduled_at')
       .limit(200);
     if (range === 'all') {
@@ -1380,6 +1398,20 @@ export default function AdminDashboard() {
                               >
                                 <CalendarPlus className="w-3 h-3" />
                               </button>
+                              <button
+                                onClick={() => setOfferFor(cust)}
+                                title={t('customerForm.sendOffer')}
+                                className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center text-purple-400 hover:text-purple-600 transition"
+                              >
+                                <FileSpreadsheet className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => { setConvertFrom(null); setInstallFor(cust); }}
+                                title={t('customerForm.newInstallation')}
+                                className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-400 hover:text-blue-600 transition"
+                              >
+                                <PackagePlus className="w-3 h-3" />
+                              </button>
                               <a
                                 href={`tel:${cust.phone}`}
                                 title={cust.phone}
@@ -1858,6 +1890,39 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
+                  {/* Visit details */}
+                  {(appt.device || appt.notes) && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                      {appt.device && (
+                        <div className="flex items-start gap-2">
+                          <Cpu className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-400">{t('visit.device')}</p>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {[appt.device.device_brand, appt.device.device_model].filter(Boolean).join(' ')}
+                            </p>
+                            <p className="text-[11px] text-slate-500" dir="ltr">
+                              {[
+                                appt.device.serial_number && `SN ${appt.device.serial_number}`,
+                                appt.device.location_in_premises,
+                                appt.device.warranty_expires && `${t('admin.warranty')}: ${appt.device.warranty_expires}`,
+                              ].filter(Boolean).join(' · ')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {appt.notes && !isNeedsReview && (
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-400">{t('visit.notes')}</p>
+                            <p className="text-sm text-slate-700 whitespace-pre-wrap">{appt.notes}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Confirmation gate */}
                   {!appt.confirmed && appt.status !== 'completed' && appt.status !== 'cancelled' && (
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
@@ -2073,6 +2138,39 @@ export default function AdminDashboard() {
         onClose={() => setShowAddCustomer(false)}
         onCreated={() => { loadData(); }}
         onOpenImport={() => { setShowAddCustomer(false); setShowImportCustomers(true); }}
+      />
+    )}
+
+    {/* ── Price offer / installation for an existing customer ── */}
+    {offerFor && (
+      <QuotationModal
+        customerId={offerFor.id}
+        customerName={offerFor.name}
+        customerPhone={offerFor.phone}
+        customerEmail={offerFor.email || undefined}
+        onClose={() => setOfferFor(null)}
+        onSaved={() => loadData()}
+        onConvert={(quotationId, devices) => {
+          setConvertFrom({ quotationId, devices });
+          setInstallFor(offerFor);
+          setOfferFor(null);
+        }}
+      />
+    )}
+
+    {installFor && (
+      <NewInstallationModal
+        customerId={installFor.id}
+        customerName={installFor.name}
+        presetDevices={convertFrom?.devices}
+        quotationId={convertFrom?.quotationId ?? null}
+        onClose={() => { setInstallFor(null); setConvertFrom(null); }}
+        onSaved={() => {
+          setInstallFor(null);
+          setConvertFrom(null);
+          loadData();
+          loadAppointments(apptDateRange, customStart, customEnd);
+        }}
       />
     )}
 

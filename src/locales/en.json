@@ -613,7 +613,11 @@
     "newInstallation": "New installation",
     "newInstallationDesc": "Register the devices being installed and book the visit in one step.",
     "scheduleVisit": "Schedule a visit",
-    "scheduleVisitDesc": "Maintenance, repair, survey — any visit type."
+    "scheduleVisitDesc": "Maintenance, repair, survey — any visit type.",
+    "duplicateTitle": "A customer with this phone already exists",
+    "duplicateBody": "{{name}} — {{phone}} is already on file.",
+    "duplicateHint": "Press Save again to add this record anyway, or close and search for the existing customer.",
+    "duplicateWarning": "This phone number is already registered — check before saving again"
   },
   "customerImport": {
     "title": "Import Customers",
