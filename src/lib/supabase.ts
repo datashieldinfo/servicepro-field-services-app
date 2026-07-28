@@ -12,5 +12,6 @@ export interface Profile {
   full_name: string;
   role: UserRole;
   phone: string;
+  must_change_password?: boolean;
   created_at: string;
 }

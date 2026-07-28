@@ -1,11 +1,14 @@
 /**
  * Single write path for customer records, shared by every role's UI.
  *
- * - With an email  → an auth account + profile is created through the
- *   `create-user` edge function, then the `customers` row is completed with the
- *   structured fields. A temporary password is generated here (the operator no
- *   longer types one); it is returned so it can be handed to the customer.
- * - Without an email → only the `customers` row is written (no portal login).
+ * - With portal access ticked (which requires an email) → an auth account +
+ *   profile is created through the `create-user` edge function, then the
+ *   `customers` row is completed with the structured fields. A temporary
+ *   password and a one-time login link come back so the office can hand either
+ *   to the customer; the account is flagged to force a password change on first
+ *   sign-in.
+ * - Otherwise → only the `customers` row is written (no portal login), even if
+ *   an email was given.
  */
 
 import { supabase } from './supabase';
@@ -22,6 +25,8 @@ export interface CreateResult {
   error?: string;
   customerId?: string;
   tempPassword?: string;
+  /** One-time magic link that signs the customer in and forces a new password. */
+  loginLink?: string;
   hasLogin: boolean;
 }
 
@@ -41,7 +46,8 @@ export async function createCustomer(
   const row = toCustomerRow(form, source, isAr);
   const email = row.email;
 
-  if (!email) {
+  // No portal access (or no email to sign in with) → record only, no account.
+  if (!email || !form.portal_access) {
     const { data, error } = await supabase.from('customers').insert(row).select('id').single();
     if (error) return { ok: false, error: error.message, hasLogin: false };
     return { ok: true, customerId: data?.id, hasLogin: false };
@@ -65,10 +71,12 @@ export async function createCustomer(
       phone: row.phone,
       address: row.address,
       customer: row,
+      must_change_password: true,
+      redirect_to: `${window.location.origin}/login`,
     }),
   });
 
-  let json: { user?: { id: string }; error?: string } = {};
+  let json: { user?: { id: string }; login_link?: string | null; error?: string } = {};
   try {
     json = await res.json();
   } catch {
@@ -79,6 +87,7 @@ export async function createCustomer(
   }
 
   const userId = json.user.id;
+  const loginLink = json.login_link ?? undefined;
 
   // The edge function already inserted a bare row (name/email/phone/address).
   // Complete it with the structured fields — or insert it if that step failed.
@@ -90,8 +99,8 @@ export async function createCustomer(
 
   if (existing?.id) {
     const { error } = await supabase.from('customers').update(row).eq('id', existing.id);
-    if (error) return { ok: true, customerId: existing.id, tempPassword, hasLogin: true, error: error.message };
-    return { ok: true, customerId: existing.id, tempPassword, hasLogin: true };
+    if (error) return { ok: true, customerId: existing.id, tempPassword, loginLink, hasLogin: true, error: error.message };
+    return { ok: true, customerId: existing.id, tempPassword, loginLink, hasLogin: true };
   }
 
   const { data, error } = await supabase
@@ -101,7 +110,7 @@ export async function createCustomer(
     .single();
 
   if (error) return { ok: false, error: error.message, hasLogin: true };
-  return { ok: true, customerId: data?.id, tempPassword, hasLogin: true };
+  return { ok: true, customerId: data?.id, tempPassword, loginLink, hasLogin: true };
 }
 
 export interface BulkResult {

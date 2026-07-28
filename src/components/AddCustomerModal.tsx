@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import { X, Loader2, User, CheckCircle, Building2, Upload, Copy, Check, CalendarPlus } from 'lucide-react';
+import {
+  X, Loader2, User, CheckCircle, Building2, Upload, Copy, Check, CalendarPlus,
+  Link as LinkIcon, MessageCircle, Mail, FileSpreadsheet, PackagePlus,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from './Toast';
 import CustomerFields from './CustomerFields';
 import ScheduleVisitModal from './ScheduleVisitModal';
+import NewInstallationModal from './NewInstallationModal';
+import QuotationModal from './QuotationModal';
 import {
   customerDisplayName,
   emptyCustomerForm,
@@ -27,9 +32,14 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
   const [form, setForm]     = useState<CustomerForm>(emptyCustomerForm());
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerForm, string>>>({});
   const [saving, setSaving] = useState(false);
-  const [done, setDone]     = useState<{ tempPassword?: string; hasLogin: boolean; customerId?: string } | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [scheduling, setScheduling] = useState(false);
+  const [done, setDone] = useState<
+    { tempPassword?: string; loginLink?: string; hasLogin: boolean; customerId?: string } | null
+  >(null);
+  const [copied, setCopied] = useState<'password' | 'link' | null>(null);
+  const [nextStep, setNextStep] = useState<'offer' | 'installation' | 'visit' | null>(null);
+  const [convertFrom, setConvertFrom] = useState<
+    { quotationId: string; devices: { device_brand: string; catalog_id: string }[] } | null
+  >(null);
 
   const corporate = form.customer_type === 'corporate';
 
@@ -65,20 +75,44 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
       return;
     }
 
-    setDone({ tempPassword: result.tempPassword, hasLogin: result.hasLogin, customerId: result.customerId });
+    setDone({
+      tempPassword: result.tempPassword,
+      loginLink: result.loginLink,
+      hasLogin: result.hasLogin,
+      customerId: result.customerId,
+    });
     showToast(t('customerForm.created'), 'success');
     onCreated();
   }
 
-  async function copyPassword() {
-    if (!done?.tempPassword) return;
+  async function copyText(text: string, which: 'password' | 'link') {
     try {
-      await navigator.clipboard.writeText(done.tempPassword);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      setTimeout(() => setCopied(null), 2000);
     } catch {
       showToast(t('toast.error'), 'error');
     }
+  }
+
+  /** The invitation the customer receives, in their language. */
+  function inviteMessage(): string {
+    const name = customerDisplayName(form);
+    const link = done?.loginLink ?? '';
+    return isAr
+      ? `مرحباً ${name}،\nتم إنشاء حسابك في تطبيق BioFamily 360.\nللدخول لأول مرة استخدم هذا الرابط، وسيُطلب منك اختيار كلمة مرور جديدة:\n${link}`
+      : `Hello ${name},\nYour BioFamily 360 account is ready.\nUse this one-time link to sign in — you will be asked to choose your own password:\n${link}`;
+  }
+
+  function shareLinkWhatsApp() {
+    const digits = `${form.country_code}${form.phone}`.replace(/\D/g, '');
+    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(inviteMessage())}`, '_blank', 'noopener');
+  }
+
+  function shareLinkEmail() {
+    const subject = isAr ? 'حسابك في تطبيق BioFamily 360' : 'Your BioFamily 360 account';
+    window.location.href =
+      `mailto:${form.email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(inviteMessage())}`;
   }
 
   return (
@@ -114,46 +148,120 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
         </div>
 
         {done ? (
-          <div className="flex flex-col items-center justify-center py-12 px-6 gap-4 text-center">
+          <div className="flex flex-col items-center justify-center py-10 px-6 gap-4 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
             <p className="font-semibold text-slate-900 text-lg">{t('customerForm.createdTitle')}</p>
 
-            {done.hasLogin && done.tempPassword ? (
-              <div className="w-full max-w-sm bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2 text-start">
-                <p className="text-xs font-semibold text-amber-900">{t('customerForm.tempPasswordTitle')}</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm font-mono text-slate-800" dir="ltr">
-                    {done.tempPassword}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={copyPassword}
-                    className="p-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition"
-                    title={t('customerForm.copy')}
-                  >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-[11px] text-amber-800">{t('customerForm.tempPasswordHint')}</p>
+            {done.hasLogin ? (
+              <div className="w-full max-w-md space-y-3 text-start">
+                {/* One-time login link */}
+                {done.loginLink && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+                    <p className="text-xs font-semibold text-blue-900 flex items-center gap-1.5">
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      {t('customerForm.loginLinkTitle')}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-white border border-blue-200 rounded-lg px-3 py-2 text-[11px] font-mono text-slate-700 truncate" dir="ltr">
+                        {done.loginLink}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyText(done.loginLink!, 'link')}
+                        className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition shrink-0"
+                        title={t('customerForm.copy')}
+                      >
+                        {copied === 'link' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={shareLinkWhatsApp}
+                        className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        {t('customerForm.sendWhatsApp')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={shareLinkEmail}
+                        className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold transition"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        {t('customerForm.sendEmail')}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-blue-800">{t('customerForm.loginLinkHint')}</p>
+                  </div>
+                )}
+
+                {/* Temporary password — the fallback once the link expires */}
+                {done.tempPassword && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+                    <p className="text-xs font-semibold text-amber-900">{t('customerForm.tempPasswordTitle')}</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm font-mono text-slate-800" dir="ltr">
+                        {done.tempPassword}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyText(done.tempPassword!, 'password')}
+                        className="p-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition"
+                        title={t('customerForm.copy')}
+                      >
+                        {copied === 'password' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-amber-800">{t('customerForm.tempPasswordHint')}</p>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-sm text-slate-500 max-w-sm">{t('customerForm.noLoginCreated')}</p>
             )}
 
+            {/* ── What's next? ─────────────────────────────────────────── */}
             {done.customerId && (
-              <div className="w-full max-w-sm border-t border-slate-100 pt-4 space-y-2">
+              <div className="w-full max-w-md border-t border-slate-100 pt-4 space-y-2 text-start">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('customerForm.whatNext')}</p>
+
                 <button
                   type="button"
-                  onClick={() => setScheduling(true)}
+                  onClick={() => setNextStep('offer')}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-purple-200 bg-purple-50 hover:border-purple-400 transition text-start"
+                >
+                  <FileSpreadsheet className="w-5 h-5 text-purple-600 shrink-0" />
+                  <span>
+                    <span className="block text-sm font-semibold text-purple-900">{t('customerForm.sendOffer')}</span>
+                    <span className="block text-[11px] text-purple-700">{t('customerForm.sendOfferDesc')}</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNextStep('installation')}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:border-blue-400 transition text-start"
+                >
+                  <PackagePlus className="w-5 h-5 text-blue-600 shrink-0" />
+                  <span>
+                    <span className="block text-sm font-semibold text-blue-900">{t('customerForm.newInstallation')}</span>
+                    <span className="block text-[11px] text-blue-700">{t('customerForm.newInstallationDesc')}</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNextStep('visit')}
                   className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-orange-200 bg-orange-50 hover:border-orange-400 transition text-start"
                 >
                   <CalendarPlus className="w-5 h-5 text-orange-600 shrink-0" />
                   <span>
-                    <span className="block text-sm font-semibold text-orange-900">{t('customerForm.scheduleInstallation')}</span>
-                    <span className="block text-[11px] text-orange-700">{t('customerForm.scheduleInstallationDesc')}</span>
+                    <span className="block text-sm font-semibold text-orange-900">{t('customerForm.scheduleVisit')}</span>
+                    <span className="block text-[11px] text-orange-700">{t('customerForm.scheduleVisitDesc')}</span>
                   </span>
                 </button>
               </div>
@@ -185,10 +293,10 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 space-y-1">
               <p className="font-semibold">{t('customerForm.whatHappens')}</p>
               <p>✓ {t('customerForm.whatHappensRecord')}</p>
-              {form.email.trim() ? (
+              {form.portal_access ? (
                 <>
                   <p>✓ {t('customerForm.whatHappensLogin')}</p>
-                  <p>✓ {t('customerForm.whatHappensPassword')}</p>
+                  <p>✓ {t('customerForm.whatHappensLink')}</p>
                 </>
               ) : (
                 <p>✓ {t('customerForm.whatHappensNoLogin')}</p>
@@ -217,15 +325,41 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
         )}
       </div>
 
-      {scheduling && done?.customerId && (
+      {nextStep === 'offer' && done?.customerId && (
+        <QuotationModal
+          customerId={done.customerId}
+          customerName={customerDisplayName(form)}
+          customerPhone={`${form.country_code}${form.phone}`}
+          customerEmail={form.email.trim() || undefined}
+          onClose={() => setNextStep(null)}
+          onSaved={() => onCreated()}
+          onConvert={(quotationId, devices) => {
+            setConvertFrom({ quotationId, devices });
+            setNextStep('installation');
+          }}
+        />
+      )}
+
+      {nextStep === 'installation' && done?.customerId && (
+        <NewInstallationModal
+          customerId={done.customerId}
+          customerName={customerDisplayName(form)}
+          presetDevices={convertFrom?.devices}
+          quotationId={convertFrom?.quotationId ?? null}
+          onClose={() => { setNextStep(null); setConvertFrom(null); }}
+          onSaved={() => { setNextStep(null); setConvertFrom(null); onCreated(); onClose(); }}
+        />
+      )}
+
+      {nextStep === 'visit' && done?.customerId && (
         <ScheduleVisitModal
           presetCustomerId={done.customerId}
           presetCustomerName={customerDisplayName(form)}
-          presetVisitType="installation"
-          onClose={() => setScheduling(false)}
-          onSaved={() => { setScheduling(false); onCreated(); onClose(); }}
+          onClose={() => setNextStep(null)}
+          onSaved={() => { setNextStep(null); onCreated(); onClose(); }}
         />
       )}
+
     </div>
   );
 }

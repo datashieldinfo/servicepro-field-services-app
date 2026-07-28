@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import {
   User, Phone, Mail, FileText, Building2, UserRound, Home, AlertTriangle,
-  Hash, Briefcase, FileBadge,
+  Hash, Briefcase, FileBadge, KeyRound,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LocationPicker from './LocationPicker';
@@ -350,6 +350,28 @@ export default function CustomerFields({ form, errors, onChange, showEmailHint =
           <FieldError field="email" />
           {showEmailHint && <p className="text-xs text-slate-400 mt-1">{t('customerForm.emailHint')}</p>}
         </div>
+
+        {showEmailHint && (
+          <label
+            className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition sm:col-span-2 ${
+              form.portal_access ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-slate-50/60'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={form.portal_access}
+              onChange={e => onChange({ portal_access: e.target.checked })}
+              className="w-4 h-4 mt-0.5 accent-blue-600"
+            />
+            <span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                <KeyRound className={`w-4 h-4 ${form.portal_access ? 'text-blue-600' : 'text-slate-400'}`} />
+                {t('customerForm.portalAccess')}
+              </span>
+              <span className="block text-[11px] text-slate-500 mt-0.5">{t('customerForm.portalAccessHint')}</span>
+            </span>
+          </label>
+        )}
       </section>
 
       {/* ── Address ─────────────────────────────────────────────────────── */}

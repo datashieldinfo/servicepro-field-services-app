@@ -35,6 +35,9 @@ export interface CustomerForm {
   country_code: string;
   phone: string;
 
+  /** Gives the customer a login to the 360 portal (needs an email). */
+  portal_access: boolean;
+
   /* address */
   state: string;
   city: string;
@@ -74,6 +77,7 @@ export function emptyCustomerForm(): CustomerForm {
     email: '',
     country_code: DEFAULT_COUNTRY_CODE,
     phone: '',
+    portal_access: false,
     state: '',
     city: '',
     area: '',
@@ -423,6 +427,7 @@ export function toCustomerRow(f: CustomerForm, source: CustomerSource, isAr = fa
     customer_type: f.customer_type,
     name: customerDisplayName(f),
     email: f.email.trim(),
+    portal_access: f.portal_access,
     country_code: f.country_code,
     phone: fullPhone(f.country_code, f.phone),
     address: composeAddress(f, isAr),
@@ -498,6 +503,8 @@ export function fromCustomerRow(row: Record<string, unknown>): CustomerForm {
   ];
   copy.forEach(key => { (form as unknown as Record<string, string>)[key] = str(key); });
 
+  form.portal_access = row.portal_access === true || row.user_id != null;
+
   const buildingType = str('building_type');
   form.building_type = buildingType === 'villa' || buildingType === 'building' ? buildingType : '';
   form.branch_count = row.branch_count == null ? '' : String(row.branch_count);
@@ -527,6 +534,8 @@ export function validateCustomer(
   else if (!isValidPhone(f.phone)) errors.push({ field: 'phone', key: 'errPhoneInvalid' });
 
   if (f.email.trim() && !isValidEmail(f.email)) errors.push({ field: 'email', key: 'errEmailInvalid' });
+  // Portal access is an account, and an account needs an email to sign in with.
+  if (f.portal_access && !f.email.trim()) errors.push({ field: 'email', key: 'errEmailForPortal' });
   if (f.billing_email.trim() && !isValidEmail(f.billing_email)) errors.push({ field: 'billing_email', key: 'errEmailInvalid' });
 
   if (requireCity && !f.city.trim()) errors.push({ field: 'city', key: 'errCity' });

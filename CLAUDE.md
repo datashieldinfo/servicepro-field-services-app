@@ -145,6 +145,33 @@ One shape, one table, one UI — every role that can add customers renders the s
 - `service_type` is still written (the visit type's English label) so older queries and search keep
   working; it is no longer typed by hand.
 
+### Portal access, one-time login link + first-login password change
+
+- **DB:** `20260728150000_portal_access_and_first_login.sql` adds `customers.portal_access`
+  (checkbox at registration) and `profiles.must_change_password`.
+- A login is created **only** when portal access is ticked (which requires an email); an email alone
+  no longer creates an account.
+- `create-user` returns `login_link` — a one-time magic link from `auth.admin.generateLink` — and sets
+  `must_change_password` on both the auth user and the profile. `AddCustomerModal` shows the link with
+  copy / WhatsApp / email share, and keeps the generated temporary password as the fallback for when
+  the link expires.
+- **`ChangePasswordGate`** is rendered by `ProtectedRoute` whenever `profile.must_change_password` is
+  true, so every dashboard is blocked until the user picks their own password.
+
+### Post-creation actions (offer / installation / visit)
+
+The success screen of `AddCustomerModal` offers three next steps, all reusable elsewhere:
+
+- **`QuotationModal`** — price offer. Lines are quoted from `inventory` (now carrying `category`:
+  part/device/accessory/service, with the device models seeded and priced) or typed by hand. Saves to
+  `quotations` with a `QT-YYYY-NNN` number from the `next_quote_number()` DB helper, then shares over
+  WhatsApp or email and records `sent_at`/`sent_channel`. Accepting converts to an installation.
+- **`NewInstallationModal`** — registers one or more `customer_devices` rows (brand, model, serial,
+  location, warranty months) **and** books the `installation` visit in a single save, linking the
+  visit to the first device and updating the customer's install/warranty dates. When it came from an
+  offer, the quotation is marked accepted with `converted_appointment_id`.
+- **`ScheduleVisitModal`** — the general scheduler for every other visit type.
+
 ### Internationalization
 
 - `src/i18n/index.ts` initialises i18next with `ar` (default) and `en` locales from `src/locales/`.
