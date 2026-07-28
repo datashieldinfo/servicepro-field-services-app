@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, CalendarCheck, MapPin, UserCog, ArrowUpRight, Activity, Send, UserPlus, FileBarChart, Clock, Database, Zap, AlertOctagon, Timer, Receipt, TrendingUp, CreditCard, Download, Package, AlertTriangle, Calendar, X, Phone, MessageCircle, CheckCircle, Wrench } from 'lucide-react';
+import { Users, CalendarCheck, MapPin, UserCog, ArrowUpRight, Activity, Send, UserPlus, FileBarChart, Clock, Database, Zap, AlertOctagon, Timer, Receipt, TrendingUp, CreditCard, Download, Package, AlertTriangle, Calendar, X, Phone, MessageCircle, CheckCircle, Wrench, Upload } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -8,6 +8,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
+import AddCustomerModal from '../../components/AddCustomerModal';
+import ImportCustomersModal from '../../components/ImportCustomersModal';
 
 interface ActivityItem {
   id: string;
@@ -50,6 +52,8 @@ export default function OwnerDashboard() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [seeding, setSeeding] = useState(false);
+  const [showAddCustomer, setShowAddCustomer]         = useState(false);
+  const [showImportCustomers, setShowImportCustomers] = useState(false);
 
   const [customerCount, setCustomerCount] = useState(0);
   const [technicianCount, setTechnicianCount] = useState(0);
@@ -299,9 +303,25 @@ export default function OwnerDashboard() {
             </h1>
             <p className="text-slate-500 mt-1">{t('owner.overview')}</p>
           </div>
-          <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-sm font-medium border border-blue-100">
-            <Activity className="w-4 h-4" />
-            {t('owner.liveDashboard')}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
+              onClick={() => setShowAddCustomer(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition shadow-sm"
+            >
+              <UserPlus className="w-4 h-4" />
+              {t('customerForm.title')}
+            </button>
+            <button
+              onClick={() => setShowImportCustomers(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl text-sm font-semibold transition"
+            >
+              <Upload className="w-4 h-4" />
+              {t('customerImport.title')}
+            </button>
+            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-sm font-medium border border-blue-100">
+              <Activity className="w-4 h-4" />
+              {t('owner.liveDashboard')}
+            </div>
           </div>
         </div>
 
@@ -1029,6 +1049,21 @@ export default function OwnerDashboard() {
         </>)}
 
       </div>
+
+      {showAddCustomer && (
+        <AddCustomerModal
+          onClose={() => setShowAddCustomer(false)}
+          onCreated={() => { loadData(); }}
+          onOpenImport={() => { setShowAddCustomer(false); setShowImportCustomers(true); }}
+        />
+      )}
+
+      {showImportCustomers && (
+        <ImportCustomersModal
+          onClose={() => setShowImportCustomers(false)}
+          onImported={() => { loadData(); }}
+        />
+      )}
     </div>
   );
 }

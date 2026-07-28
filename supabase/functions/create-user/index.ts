@@ -56,20 +56,26 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { type, email, password, full_name, phone, address } = await req.json();
+    const { type, email, password, full_name, phone, address, customer } = await req.json();
 
-    if (!type || !email || !password || !full_name) {
-      return new Response(JSON.stringify({ error: 'Missing required fields: type, email, password, full_name' }), {
+    if (!type || !email || !full_name) {
+      return new Response(JSON.stringify({ error: 'Missing required fields: type, email, full_name' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    // The UI no longer asks for a password — generate one when it is omitted.
+    const generatedPassword = password ?? Array.from(
+      crypto.getRandomValues(new Uint32Array(14)),
+      (n) => 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%'[n % 60],
+    ).join('');
+
     const role = type === 'technician' ? 'technician' : 'customer';
 
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password,
+      password: generatedPassword,
       email_confirm: true,
       user_metadata: { full_name, role },
     });
@@ -88,14 +94,35 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from('profiles').update({ phone }).eq('id', userId);
     }
 
-    // For customer type, also insert the customers table row
+    // For customer type, also insert the customers table row.
+    // `customer` carries the structured record (type, address parts, map pin,
+    // corporate fields); the flat fields stay as a fallback for older callers.
     if (role === 'customer') {
+      const allowed = [
+        'customer_type', 'name', 'email', 'country_code', 'phone', 'address',
+        'state', 'city', 'area', 'street', 'building_type',
+        'villa_name', 'villa_number', 'building_name', 'building_number', 'flat_number',
+        'latitude', 'longitude', 'location_label', 'notes',
+        'company_name', 'trade_name', 'industry', 'commercial_reg_no', 'tax_number',
+        'branch_count', 'payment_terms', 'billing_email',
+        'contact_person_name', 'contact_person_title', 'contact_person_phone', 'contact_person_email',
+        'source',
+      ];
+
+      const structured: Record<string, unknown> = {};
+      if (customer && typeof customer === 'object') {
+        for (const key of allowed) {
+          if (customer[key] !== undefined) structured[key] = customer[key];
+        }
+      }
+
       const { error: custError } = await supabaseAdmin.from('customers').insert({
         user_id: userId,
         name: full_name,
         email,
         phone: phone ?? '',
         address: address ?? '',
+        ...structured,
       });
 
       if (custError) {

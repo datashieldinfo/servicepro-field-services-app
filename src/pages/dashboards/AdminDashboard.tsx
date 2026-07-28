@@ -3,7 +3,7 @@ import {
   Calendar, CalendarPlus, ClipboardList, Plus, Search, Phone, Mail, Clock,
   AlertTriangle, CheckCircle, Package, ChevronRight, Zap, Wrench, MessageSquare,
   Droplets, HelpCircle, X, Loader2, SlidersHorizontal, Download, ChevronDown,
-  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle,
+  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
 import AddTechnicianModal from '../../components/AddTechnicianModal';
+import ImportCustomersModal from '../../components/ImportCustomersModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,7 @@ export default function AdminDashboard() {
   // ── Add Customer / Add Technician modal state ────────────────────────────
   const [showAddCustomer, setShowAddCustomer]     = useState(false);
   const [showAddTechnician, setShowAddTechnician] = useState(false);
+  const [showImportCustomers, setShowImportCustomers] = useState(false);
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -905,6 +907,14 @@ export default function AdminDashboard() {
             >
               <Plus className="w-4 h-4" />
               {i18n.language === 'ar' ? 'عميل جديد' : 'New Customer'}
+            </button>
+            {/* Import Customers */}
+            <button
+              onClick={() => setShowImportCustomers(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+            >
+              <Upload className="w-4 h-4" />
+              {t('customerImport.title')}
             </button>
             {/* Add New Technician */}
             <button
@@ -2266,6 +2276,15 @@ export default function AdminDashboard() {
       <AddCustomerModal
         onClose={() => setShowAddCustomer(false)}
         onCreated={() => { loadData(); }}
+        onOpenImport={() => { setShowAddCustomer(false); setShowImportCustomers(true); }}
+      />
+    )}
+
+    {/* ── Import Customers Modal ── */}
+    {showImportCustomers && (
+      <ImportCustomersModal
+        onClose={() => setShowImportCustomers(false)}
+        onImported={() => { loadData(); }}
       />
     )}
 

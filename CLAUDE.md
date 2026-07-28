@@ -94,6 +94,31 @@ Migrations live in `supabase/migrations/` in timestamp order. The `appointments`
 - **UI — Customer:** Fetches and displays own registered devices in dashboard.
 - **No create/edit UI** for devices in any dashboard — admin can only view, not add or edit.
 
+### Customer records (individual / corporate) + import
+
+One shape, one table, one UI — every role that can add customers renders the same modal.
+
+- **DB:** migration `20260728000001_customer_types_and_structured_address.sql` extends `customers` with
+  `customer_type` (individual/corporate), `country_code`, structured address
+  (`state`, `city`, `area`, `street`, `building_type` villa|building, `villa_name`/`villa_number`,
+  `building_name`/`building_number`/`flat_number`), map pin (`latitude`, `longitude`, `location_label`),
+  `notes`, `source` (manual/excel/vcf/contacts) and corporate fields (`company_name`, `trade_name`,
+  `industry`, `commercial_reg_no`, `tax_number`, `branch_count`, `payment_terms`, `billing_email`,
+  `contact_person_*`). `customers.address` still holds the composed one-line address for existing views.
+- **`src/lib/customerFields.ts`** — `CustomerForm` shape, country dial codes, Jordan governorates/cities,
+  Amman areas, corporate picklists, `composeAddress()`, `toCustomerRow()`, `validateCustomer()`.
+- **`src/lib/customerService.ts`** — single write path. `createCustomer()` generates a temporary password
+  (the UI no longer asks for one) and calls the `create-user` edge function when an email is given, then
+  completes the `customers` row; with no email it writes the record only (no portal login).
+  `createCustomersBulk()` inserts imported rows directly, isolating bad rows on batch failure.
+- **`src/lib/geocoding.ts`** — OpenStreetMap/Nominatim place search + reverse geocoding,
+  `navigator.geolocation`, and a paste-parser for coordinates / Google Maps links. No API key, fails soft.
+- **`AddCustomerModal`** — record-type selector, mandatory phone with dial-code picklist, structured
+  address, `LocationPicker` map pin. Phone + name (+ city) are the only required fields.
+- **`ImportCustomersModal`** — CSV template download/parse, `.vcf` (vCard 2.1/3.0/4.0, incl.
+  quoted-printable) parse, and the mobile Contact Picker API when the browser exposes it. Preview table
+  allows per-row edit/exclude before import. `.xlsx` is **not** parsed — users are told to save as CSV.
+
 ### Internationalization
 
 - `src/i18n/index.ts` initialises i18next with `ar` (default) and `en` locales from `src/locales/`.
@@ -153,6 +178,9 @@ Accessible from `OwnerDashboard`. DB-connected: queries `appointments` (status=c
 - **WhatsApp number** — hardcoded to `0778068705` in `PrintableInvoice.tsx`; should be configurable. Emergency WhatsApp link in `CustomerDashboard` hardcoded to `+962791234567`.
 - **Contract create/edit UI** — DB table exists; Admin/Owner/Customer can view contracts but no UI to create or edit them.
 - **Customer devices create/edit UI** — DB table exists; Admin can view devices per customer but no UI to register or edit devices.
+- **Customer edit UI** — the new structured fields can be created and imported, but there is no edit screen for an existing customer yet (`AddCustomerModal` is create-only).
+- **`.xlsx` import** — only CSV is parsed (no spreadsheet dependency); `.xlsx` uploads are rejected with a "save as CSV" message.
+- **Contact Picker import** — implemented behind feature detection; only Android Chrome-family browsers expose `navigator.contacts` today.
 - **Payment/invoicing for admin-created jobs** — invoice creation is only triggered from the Technician dashboard job completion flow.
 - **`get_my_role()` helper function** — referenced in `invoices` RLS policies; must exist in the DB (not in any migration file in this repo — likely created outside or in a missing migration).
 - **`inventory_part_name_unique` index conflict** — migration `20260529000002` uses `ON CONFLICT DO NOTHING` (no unique index); migration `20260529000003` creates `CREATE UNIQUE INDEX inventory_part_name_unique` and uses `ON CONFLICT (part_name) DO UPDATE`. If both migrations ran, the index creation in `_000003` may fail if `_000002` left duplicate `part_name` rows. The deduplication SQL (DELETE duplicates then CREATE UNIQUE INDEX) must be run before applying `_000003`.
