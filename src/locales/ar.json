@@ -596,7 +596,10 @@
     "errPhoneRequired": "رقم الهاتف مطلوب",
     "errPhoneInvalid": "أدخل رقم هاتف صحيح",
     "errEmailInvalid": "أدخل بريداً إلكترونياً صحيحاً",
-    "errCity": "المدينة مطلوبة"
+    "errCity": "المدينة مطلوبة",
+    "whatNext": "الخطوة التالية",
+    "scheduleInstallation": "جدولة زيارة التركيب",
+    "scheduleInstallationDesc": "احجز الزيارة الأولى الآن — يُسجَّل الجهاز في الموقع."
   },
   "customerImport": {
     "title": "استيراد العملاء",
@@ -634,5 +637,69 @@
     "contactsUnsupported": "هذا الجهاز/المتصفح لا يوفر منتقي جهات الاتصال. صدّر ملف .vcf واستخدم تبويب vCard.",
     "contactsFailed": "لم يتم اختيار أي جهة اتصال",
     "deviceContacts": "جهات اتصال الجهاز"
+  },
+  "visit": {
+    "scheduleTitle": "جدولة زيارة",
+    "scheduleSubtitle": "النوع والجهاز والتأكيد — مكان واحد لجميع الأدوار",
+    "scheduleAction": "جدولة زيارة",
+    "scheduled": "تم جدولة الزيارة",
+    "visitType": "نوع الزيارة",
+    "customer": "العميل",
+    "searchCustomer": "ابحث بالاسم أو رقم الهاتف...",
+    "device": "الجهاز",
+    "recommended": "مستحسن",
+    "selectCustomerFirst": "اختر العميل أولاً",
+    "wholeSite": "الموقع بالكامل / غير مرتبطة بجهاز",
+    "noDevices": "لا توجد أجهزة مسجلة",
+    "noDevicesHint": "لا توجد أجهزة مسجلة لهذا العميل بعد — تُسجَّل الأجهزة أثناء زيارة التركيب.",
+    "deviceRegisteredOnVisit": "يقوم الفني بتسجيل الجهاز الجديد خلال هذه الزيارة — الماركة والموديل والرقم التسلسلي والضمان.",
+    "dateTime": "التاريخ والوقت",
+    "technician": "الفني",
+    "address": "عنوان الزيارة",
+    "addressPlaceholder": "الافتراضي هو عنوان العميل",
+    "notes": "ملاحظات للفني",
+    "notesPlaceholder": "تعليمات الوصول، ما يجب إحضاره...",
+    "conflictWarning": "لدى هذا الفني {{count}} زيارة خلال ساعتين من هذا الموعد.",
+    "customerConfirmed": "العميل أكّد هذه الزيارة",
+    "confirmedHint": "اتركه فارغاً إذا لم يتم التواصل مع العميل بعد — الزيارات غير المؤكدة تظهر بعلامة في الجدول.",
+    "confirmationChannel": "تم التأكيد عبر",
+    "confirmed": "مؤكدة",
+    "unconfirmed": "غير مؤكدة",
+    "confirm": "تأكيد",
+    "confirmedToast": "تم تأكيد الزيارة",
+    "notConfirmedYet": "لم يؤكد العميل هذه الزيارة بعد.",
+    "mixThisMonth": "زيارات هذا الشهر حسب النوع",
+    "unconfirmedUpcoming": "زيارات قادمة غير مؤكدة",
+    "errCustomer": "اختر العميل",
+    "errDate": "حدد التاريخ والوقت",
+    "errChannel": "حدد طريقة تأكيد العميل",
+    "type": {
+      "installation": "تركيب",
+      "preventive_maintenance": "صيانة وقائية",
+      "scheduled_visit": "زيارة مجدولة",
+      "repair": "إصلاح",
+      "emergency": "طارئ",
+      "survey": "معاينة موقع"
+    },
+    "typeHint": {
+      "installation": "تركيب لأول مرة — يتم تسجيل الجهاز خلال الزيارة.",
+      "preventive_maintenance": "أعمال صيانة/تغيير فلاتر دورية لجهاز قائم.",
+      "scheduled_visit": "زيارة مخططة ضمن عقد العميل.",
+      "repair": "إصلاح عطل تم الإبلاغ عنه على جهاز قائم.",
+      "emergency": "استدعاء عاجل يُجدول قبل الأعمال الدورية.",
+      "survey": "معاينة الموقع قبل التسعير أو التركيب."
+    },
+    "channel": {
+      "phone": "مكالمة هاتفية",
+      "whatsapp": "واتساب",
+      "portal": "بوابة العميل",
+      "email": "بريد إلكتروني",
+      "in_person": "شخصياً"
+    },
+    "confirmVia": {
+      "phone": "تأكيد عبر الهاتف",
+      "whatsapp": "تأكيد عبر واتساب",
+      "in_person": "تأكيد شخصياً"
+    }
   }
 }

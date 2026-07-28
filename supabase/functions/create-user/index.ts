@@ -49,8 +49,8 @@ Deno.serve(async (req) => {
       .eq('id', callerUser.id)
       .single();
 
-    if (!callerProfile || !['admin', 'owner'].includes(callerProfile.role)) {
-      return new Response(JSON.stringify({ error: 'Only admins and owners can create users' }), {
+    if (!callerProfile || !['admin', 'owner', 'manager'].includes(callerProfile.role)) {
+      return new Response(JSON.stringify({ error: 'Only admins, owners and managers can create users' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

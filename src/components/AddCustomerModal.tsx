@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { X, Loader2, User, CheckCircle, Building2, Upload, Copy, Check } from 'lucide-react';
+import { X, Loader2, User, CheckCircle, Building2, Upload, Copy, Check, CalendarPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from './Toast';
 import CustomerFields from './CustomerFields';
+import ScheduleVisitModal from './ScheduleVisitModal';
 import {
+  customerDisplayName,
   emptyCustomerForm,
   validateCustomer,
   type CustomerForm,
@@ -25,8 +27,9 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
   const [form, setForm]     = useState<CustomerForm>(emptyCustomerForm());
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerForm, string>>>({});
   const [saving, setSaving] = useState(false);
-  const [done, setDone]     = useState<{ tempPassword?: string; hasLogin: boolean } | null>(null);
+  const [done, setDone]     = useState<{ tempPassword?: string; hasLogin: boolean; customerId?: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
 
   const corporate = form.customer_type === 'corporate';
 
@@ -62,7 +65,7 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
       return;
     }
 
-    setDone({ tempPassword: result.tempPassword, hasLogin: result.hasLogin });
+    setDone({ tempPassword: result.tempPassword, hasLogin: result.hasLogin, customerId: result.customerId });
     showToast(t('customerForm.created'), 'success');
     onCreated();
   }
@@ -139,6 +142,23 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
               <p className="text-sm text-slate-500 max-w-sm">{t('customerForm.noLoginCreated')}</p>
             )}
 
+            {done.customerId && (
+              <div className="w-full max-w-sm border-t border-slate-100 pt-4 space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('customerForm.whatNext')}</p>
+                <button
+                  type="button"
+                  onClick={() => setScheduling(true)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-orange-200 bg-orange-50 hover:border-orange-400 transition text-start"
+                >
+                  <CalendarPlus className="w-5 h-5 text-orange-600 shrink-0" />
+                  <span>
+                    <span className="block text-sm font-semibold text-orange-900">{t('customerForm.scheduleInstallation')}</span>
+                    <span className="block text-[11px] text-orange-700">{t('customerForm.scheduleInstallationDesc')}</span>
+                  </span>
+                </button>
+              </div>
+            )}
+
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
@@ -196,6 +216,16 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
           </form>
         )}
       </div>
+
+      {scheduling && done?.customerId && (
+        <ScheduleVisitModal
+          presetCustomerId={done.customerId}
+          presetCustomerName={customerDisplayName(form)}
+          presetVisitType="installation"
+          onClose={() => setScheduling(false)}
+          onSaved={() => { setScheduling(false); onCreated(); onClose(); }}
+        />
+      )}
     </div>
   );
 }

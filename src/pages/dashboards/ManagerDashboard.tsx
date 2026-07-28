@@ -16,6 +16,8 @@ import EditDeviceModal from '../../components/EditDeviceModal';
 import EditContractModal from '../../components/EditContractModal';
 import Customer360Panel from '../../components/Customer360Panel';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
+import ScheduleVisitModal from '../../components/ScheduleVisitModal';
+import VisitTypeBadge from '../../components/VisitTypeBadge';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,7 +32,8 @@ interface Customer {
 }
 
 interface ApptRow {
-  id: string; service_type: string; scheduled_at: string; status: string;
+  id: string; service_type: string; visit_type: string; confirmed: boolean;
+  scheduled_at: string; status: string;
   customers: { name: string } | null;
   technician: { full_name: string } | null;
 }
@@ -111,6 +114,8 @@ export default function ManagerDashboard() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showImportCustomers, setShowImportCustomers] = useState(false);
+  const [scheduleFor, setScheduleFor] = useState<{ id: string; name: string } | null>(null);
+  const [showScheduleVisit, setShowScheduleVisit] = useState(false);
   const [fullEditCustomerId, setFullEditCustomerId] = useState<string | null>(null);
   const [editDevice, setEditDevice] = useState<DeviceRow | null>(null);
   const [editContract, setEditContract] = useState<ContractRow | null>(null);
@@ -176,7 +181,7 @@ export default function ManagerDashboard() {
   async function loadAppointments() {
     const { data } = await supabase
       .from('appointments')
-      .select('id, service_type, scheduled_at, status, customers(name), technician:profiles!appointments_technician_id_fkey(full_name)')
+      .select('id, service_type, visit_type, confirmed, scheduled_at, status, customers(name), technician:profiles!appointments_technician_id_fkey(full_name)')
       .order('scheduled_at', { ascending: false })
       .limit(200);
     setAppointments(((data ?? []) as Record<string, unknown>[]).map(r => ({
@@ -369,6 +374,22 @@ export default function ManagerDashboard() {
     partial: 'bg-amber-100 text-amber-700',
   };
 
+  async function confirmVisit(id: string) {
+    const { error } = await supabase
+      .from('appointments')
+      .update({
+        confirmed: true,
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: profile?.id ?? null,
+        confirmation_channel: 'phone',
+      })
+      .eq('id', id);
+
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(t('visit.confirmedToast'), 'success');
+    setAppointments(prev => prev.map(a => (a.id === id ? { ...a, confirmed: true } : a)));
+  }
+
   const TABS: { id: ManagerTab; labelKey: string; icon: typeof Users }[] = [
     { id: 'overview', labelKey: 'manager.tabOverview', icon: TrendingUp },
     { id: 'customers', labelKey: 'manager.tabCustomers', icon: Users },
@@ -402,6 +423,13 @@ export default function ManagerDashboard() {
             >
               <Plus className="w-4 h-4" />
               {isAr ? 'عميل جديد' : 'New Customer'}
+            </button>
+            <button
+              onClick={() => { setScheduleFor(null); setShowScheduleVisit(true); }}
+              className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition shadow-sm"
+            >
+              <Calendar className="w-4 h-4" />
+              {t('visit.scheduleAction')}
             </button>
             <button
               onClick={() => setShowImportCustomers(true)}
@@ -528,10 +556,26 @@ export default function ManagerDashboard() {
               ) : filteredAppts.map(a => (
                 <div key={a.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
                   <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 text-sm truncate">{a.customers?.name ?? '—'}</p>
-                    <p className="text-xs text-slate-500 truncate">{a.service_type} · {a.technician?.full_name ?? t('customer360.unassigned')} · {new Date(a.scheduled_at).toLocaleString('en-GB')}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-slate-900 text-sm truncate">{a.customers?.name ?? '—'}</p>
+                      <VisitTypeBadge visitType={a.visit_type} />
+                    </div>
+                    <p className="text-xs text-slate-500 truncate">
+                      {a.technician?.full_name ?? t('customer360.unassigned')} · {new Date(a.scheduled_at).toLocaleString('en-GB')}
+                    </p>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 ${statusColor[a.status] ?? 'bg-slate-100 text-slate-600'}`}>{a.status}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!a.confirmed && a.status !== 'completed' && a.status !== 'cancelled' && (
+                      <button
+                        onClick={() => confirmVisit(a.id)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-green-600 hover:bg-green-700 text-white transition"
+                      >
+                        <CheckCircle className="w-3 h-3" />
+                        {t('visit.confirm')}
+                      </button>
+                    )}
+                    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold ${statusColor[a.status] ?? 'bg-slate-100 text-slate-600'}`}>{a.status}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -813,6 +857,14 @@ export default function ManagerDashboard() {
         onClose={() => setShowAddCustomer(false)}
         onCreated={() => { loadCustomers(); loadOverview(); }}
         onOpenImport={() => { setShowAddCustomer(false); setShowImportCustomers(true); }}
+      />
+    )}
+    {showScheduleVisit && (
+      <ScheduleVisitModal
+        presetCustomerId={scheduleFor?.id}
+        presetCustomerName={scheduleFor?.name}
+        onClose={() => { setShowScheduleVisit(false); setScheduleFor(null); }}
+        onSaved={() => { loadAppointments(); loadOverview(); }}
       />
     )}
     {showImportCustomers && (

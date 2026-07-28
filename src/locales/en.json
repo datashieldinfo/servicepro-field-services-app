@@ -596,7 +596,10 @@
     "errPhoneRequired": "Phone number is required",
     "errPhoneInvalid": "Enter a valid phone number",
     "errEmailInvalid": "Enter a valid email address",
-    "errCity": "City is required"
+    "errCity": "City is required",
+    "whatNext": "What's next?",
+    "scheduleInstallation": "Schedule installation visit",
+    "scheduleInstallationDesc": "Book the first visit now — the device gets registered on site."
   },
   "customerImport": {
     "title": "Import Customers",
@@ -634,5 +637,69 @@
     "contactsUnsupported": "This device/browser does not expose the contact picker. Export a .vcf file and use the vCard tab instead.",
     "contactsFailed": "No contacts were selected",
     "deviceContacts": "Device contacts"
+  },
+  "visit": {
+    "scheduleTitle": "Schedule a Visit",
+    "scheduleSubtitle": "Type, device and confirmation — one place for every role",
+    "scheduleAction": "Schedule Visit",
+    "scheduled": "Visit scheduled",
+    "visitType": "Visit Type",
+    "customer": "Customer",
+    "searchCustomer": "Search by name or phone...",
+    "device": "Device",
+    "recommended": "recommended",
+    "selectCustomerFirst": "Select a customer first",
+    "wholeSite": "Whole site / not device-specific",
+    "noDevices": "No devices registered",
+    "noDevicesHint": "This customer has no registered devices yet — they get registered during an installation visit.",
+    "deviceRegisteredOnVisit": "The technician registers the new device during this visit — brand, model, serial number and warranty.",
+    "dateTime": "Date & Time",
+    "technician": "Technician",
+    "address": "Visit Address",
+    "addressPlaceholder": "Defaults to the customer's address",
+    "notes": "Notes for the technician",
+    "notesPlaceholder": "Access instructions, what to bring...",
+    "conflictWarning": "This technician already has {{count}} visit(s) within 2 hours of that time.",
+    "customerConfirmed": "Customer has confirmed this visit",
+    "confirmedHint": "Leave unticked if you still have to reach the customer — unconfirmed visits are flagged in the schedule.",
+    "confirmationChannel": "Confirmed via",
+    "confirmed": "Confirmed",
+    "unconfirmed": "Unconfirmed",
+    "confirm": "Confirm",
+    "confirmedToast": "Visit marked as confirmed",
+    "notConfirmedYet": "The customer has not confirmed this visit yet.",
+    "mixThisMonth": "Visits this month by type",
+    "unconfirmedUpcoming": "Unconfirmed upcoming visits",
+    "errCustomer": "Choose a customer",
+    "errDate": "Pick a date and time",
+    "errChannel": "Say how the customer confirmed",
+    "type": {
+      "installation": "Installation",
+      "preventive_maintenance": "Preventive Maintenance",
+      "scheduled_visit": "Scheduled Visit",
+      "repair": "Repair",
+      "emergency": "Emergency",
+      "survey": "Site Survey"
+    },
+    "typeHint": {
+      "installation": "First-time installation — the device is registered during the visit.",
+      "preventive_maintenance": "Routine filter/service work on an existing device.",
+      "scheduled_visit": "A planned visit under the customer's contract.",
+      "repair": "Fixing a reported fault on an existing device.",
+      "emergency": "Urgent call-out, scheduled ahead of routine work.",
+      "survey": "Site inspection before quoting or installing."
+    },
+    "channel": {
+      "phone": "Phone call",
+      "whatsapp": "WhatsApp",
+      "portal": "Customer portal",
+      "email": "Email",
+      "in_person": "In person"
+    },
+    "confirmVia": {
+      "phone": "Confirmed by phone",
+      "whatsapp": "Confirmed on WhatsApp",
+      "in_person": "Confirmed in person"
+    }
   }
 }

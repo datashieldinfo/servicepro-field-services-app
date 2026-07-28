@@ -10,6 +10,8 @@ import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
+import VisitTypeBadge from '../../components/VisitTypeBadge';
+import { VISIT_TYPES, visitTypeDef } from '../../lib/visitFields';
 
 interface ActivityItem {
   id: string;
@@ -56,6 +58,8 @@ export default function OwnerDashboard() {
   const [showImportCustomers, setShowImportCustomers] = useState(false);
 
   const [customerCount, setCustomerCount] = useState(0);
+  const [visitMix, setVisitMix] = useState<{ type: string; count: number }[]>([]);
+  const [unconfirmedCount, setUnconfirmedCount] = useState(0);
   const [technicianCount, setTechnicianCount] = useState(0);
   const [todayAppts, setTodayAppts] = useState(0);
   const [monthlyVisits, setMonthlyVisits] = useState(0);
@@ -115,6 +119,25 @@ export default function OwnerDashboard() {
         .gte('scheduled_at', today)
         .lt('scheduled_at', tomorrow),
     ]);
+
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const [mixRes, unconfirmedRes] = await Promise.all([
+      supabase.from('appointments').select('visit_type').gte('scheduled_at', monthStart),
+      supabase.from('appointments').select('id', { count: 'exact', head: true })
+        .eq('confirmed', false)
+        .in('status', ['pending', 'in_progress', 'awaiting_approval'])
+        .gte('scheduled_at', new Date().toISOString()),
+    ]);
+
+    const mixCounts = ((mixRes.data ?? []) as { visit_type: string }[]).reduce<Record<string, number>>((acc, r) => {
+      const key = r.visit_type ?? 'scheduled_visit';
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    setVisitMix(VISIT_TYPES
+      .map(vt => ({ type: vt.value, count: mixCounts[vt.value] ?? 0 }))
+      .filter(row => row.count > 0));
+    setUnconfirmedCount(unconfirmedRes.count ?? 0);
 
     setCustomerCount(custRes.count ?? 0);
     setTechnicianCount(techRes.count ?? 0);
@@ -550,6 +573,49 @@ export default function OwnerDashboard() {
               </div>
             );
           })}
+        </div>
+
+        {/* Visit mix this month + confirmation backlog */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
+          <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <p className="font-semibold text-slate-900">{t('visit.mixThisMonth')}</p>
+              <Calendar className="w-4 h-4 text-slate-400" />
+            </div>
+            {visitMix.length === 0 ? (
+              <p className="text-sm text-slate-400">{t('common.noData')}</p>
+            ) : (
+              <div className="space-y-2.5">
+                {visitMix.map(row => {
+                  const total = visitMix.reduce((sum, r) => sum + r.count, 0);
+                  const def = visitTypeDef(row.type);
+                  return (
+                    <div key={row.type} className="flex items-center gap-3">
+                      <span className="w-40 shrink-0"><VisitTypeBadge visitType={row.type} /></span>
+                      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${def.dot} rounded-full`} style={{ width: `${Math.round((row.count / total) * 100)}%` }} />
+                      </div>
+                      <span className="w-8 text-end text-sm font-semibold text-slate-700">{row.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div
+            className={`rounded-2xl p-5 shadow-sm border transition-shadow ${
+              unconfirmedCount > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${unconfirmedCount > 0 ? 'bg-amber-100' : 'bg-slate-50'}`}>
+                <AlertTriangle className={`w-5 h-5 ${unconfirmedCount > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-slate-900">{unconfirmedCount}</p>
+            <p className="text-sm text-slate-500 mt-0.5">{t('visit.unconfirmedUpcoming')}</p>
+          </div>
         </div>
 
         {/* Contract KPIs */}

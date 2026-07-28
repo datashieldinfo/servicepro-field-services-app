@@ -126,6 +126,25 @@ One shape, one table, one UI — every role that can add customers renders the s
   quoted-printable) parse, and the mobile Contact Picker API when the browser exposes it. Preview table
   allows per-row edit/exclude before import. `.xlsx` is **not** parsed — users are told to save as CSV.
 
+### Visit workflow (typed visits — phase A)
+
+- **DB:** migration `20260728120000_visit_types_and_confirmation.sql` extends `appointments` with
+  `visit_type` (installation/preventive_maintenance/scheduled_visit/repair/emergency/survey),
+  `device_id` → `customer_devices`, the confirmation gate (`confirmed_at`, `confirmed_by`,
+  `confirmation_channel`), `created_by` and `next_visit_of`. A BEFORE UPDATE trigger
+  (`sync_appointment_confirmation`) keeps the legacy `confirmed` boolean and `confirmed_at` in
+  agreement whichever one a screen writes. Existing rows were backfilled from `service_type` text.
+- **`src/lib/visitFields.ts`** — `VISIT_TYPES` (badge colours, whether the type needs or registers a
+  device), confirmation channels, `VisitForm`, `toAppointmentRow()`, `validateVisit()`, and the
+  next-visit interval defaults used later by the follow-up scheduler.
+- **`ScheduleVisitModal`** — the single scheduler. Customer search (or preset), visit type, device
+  picker scoped to that customer, technician with a ±2h double-booking check, address defaulted from
+  the customer, notes, and the confirmation gate. Replaces the old inline form in `AdminDashboard`
+  and is reused by `ManagerDashboard` and the post-creation step in `AddCustomerModal`.
+- **`VisitTypeBadge`** — shared coloured badge, rendered in admin/manager/technician lists.
+- `service_type` is still written (the visit type's English label) so older queries and search keep
+  working; it is no longer typed by hand.
+
 ### Internationalization
 
 - `src/i18n/index.ts` initialises i18next with `ar` (default) and `en` locales from `src/locales/`.
