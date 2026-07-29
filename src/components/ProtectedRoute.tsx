@@ -1,4 +1,5 @@
 import { Navigate } from 'react-router-dom';
+import ChangePasswordGate from './ChangePasswordGate';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../lib/supabase';
 
@@ -23,12 +24,16 @@ export function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
 
   if (!user) return <Navigate to="/login" replace />;
 
+  // An invited account must choose its own password before it can go anywhere.
+  if (profile?.must_change_password) return <ChangePasswordGate />;
+
   if (allowedRole && profile?.role !== allowedRole) {
     const roleRoutes: Record<UserRole, string> = {
       owner: '/dashboard/owner',
       technician: '/dashboard/technician',
       admin: '/dashboard/admin',
       customer: '/dashboard/customer',
+      manager: '/dashboard/manager',
     };
     return <Navigate to={roleRoutes[profile?.role ?? 'customer']} replace />;
   }

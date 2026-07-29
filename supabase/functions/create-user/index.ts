@@ -49,29 +49,38 @@ Deno.serve(async (req) => {
       .eq('id', callerUser.id)
       .single();
 
-    if (!callerProfile || !['admin', 'owner'].includes(callerProfile.role)) {
-      return new Response(JSON.stringify({ error: 'Only admins and owners can create users' }), {
+    if (!callerProfile || !['admin', 'owner', 'manager'].includes(callerProfile.role)) {
+      return new Response(JSON.stringify({ error: 'Only admins, owners and managers can create users' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const { type, email, password, full_name, phone, address } = await req.json();
+    const {
+      type, email, password, full_name, phone, address, customer,
+      redirect_to, must_change_password = true,
+    } = await req.json();
 
-    if (!type || !email || !password || !full_name) {
-      return new Response(JSON.stringify({ error: 'Missing required fields: type, email, password, full_name' }), {
+    if (!type || !email || !full_name) {
+      return new Response(JSON.stringify({ error: 'Missing required fields: type, email, full_name' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    // The UI no longer asks for a password — generate one when it is omitted.
+    const generatedPassword = password ?? Array.from(
+      crypto.getRandomValues(new Uint32Array(14)),
+      (n) => 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%'[n % 60],
+    ).join('');
+
     const role = type === 'technician' ? 'technician' : 'customer';
 
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password,
+      password: generatedPassword,
       email_confirm: true,
-      user_metadata: { full_name, role },
+      user_metadata: { full_name, role, must_change_password },
     });
 
     if (createError || !newUser.user) {
@@ -83,19 +92,58 @@ Deno.serve(async (req) => {
 
     const userId = newUser.user.id;
 
-    // Update profile phone if provided (profile row is auto-created by handle_new_user trigger)
-    if (phone) {
-      await supabaseAdmin.from('profiles').update({ phone }).eq('id', userId);
+    // The profile row is auto-created by the handle_new_user trigger; complete it.
+    const profilePatch: Record<string, unknown> = { must_change_password };
+    if (phone) profilePatch.phone = phone;
+    await supabaseAdmin.from('profiles').update(profilePatch).eq('id', userId);
+
+    /*
+      One-time login link. The customer follows it instead of being told a
+      password out loud; `must_change_password` then forces them to choose
+      their own before they reach the dashboard.
+    */
+    let actionLink: string | null = null;
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+      options: redirect_to ? { redirectTo: redirect_to } : undefined,
+    });
+
+    if (linkError) {
+      console.error('Failed to generate login link:', linkError.message);
+    } else {
+      actionLink = linkData?.properties?.action_link ?? null;
     }
 
-    // For customer type, also insert the customers table row
+    // For customer type, also insert the customers table row.
+    // `customer` carries the structured record (type, address parts, map pin,
+    // corporate fields); the flat fields stay as a fallback for older callers.
     if (role === 'customer') {
+      const allowed = [
+        'customer_type', 'name', 'email', 'country_code', 'phone', 'address',
+        'state', 'city', 'area', 'street', 'building_type',
+        'villa_name', 'villa_number', 'building_name', 'building_number', 'flat_number',
+        'latitude', 'longitude', 'location_label', 'notes',
+        'company_name', 'trade_name', 'industry', 'commercial_reg_no', 'tax_number',
+        'branch_count', 'payment_terms', 'billing_email',
+        'contact_person_name', 'contact_person_title', 'contact_person_phone', 'contact_person_email',
+        'source', 'portal_access',
+      ];
+
+      const structured: Record<string, unknown> = {};
+      if (customer && typeof customer === 'object') {
+        for (const key of allowed) {
+          if (customer[key] !== undefined) structured[key] = customer[key];
+        }
+      }
+
       const { error: custError } = await supabaseAdmin.from('customers').insert({
         user_id: userId,
         name: full_name,
         email,
         phone: phone ?? '',
         address: address ?? '',
+        ...structured,
       });
 
       if (custError) {
@@ -105,7 +153,10 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ user: { id: userId, email: newUser.user.email } }),
+      JSON.stringify({
+        user: { id: userId, email: newUser.user.email },
+        login_link: actionLink,
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

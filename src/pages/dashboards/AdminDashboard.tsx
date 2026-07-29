@@ -3,7 +3,9 @@ import {
   Calendar, CalendarPlus, ClipboardList, Plus, Search, Phone, Mail, Clock,
   AlertTriangle, CheckCircle, Package, ChevronRight, Zap, Wrench, MessageSquare,
   Droplets, HelpCircle, X, Loader2, SlidersHorizontal, Download, ChevronDown,
-  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle,
+  ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload, Pencil, FileText,
+  FileSpreadsheet, PackagePlus,
+  PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -12,7 +14,22 @@ import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
+import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import AddTechnicianModal from '../../components/AddTechnicianModal';
+import ImportCustomersModal from '../../components/ImportCustomersModal';
+import ScheduleVisitModal from '../../components/ScheduleVisitModal';
+import NewInstallationModal from '../../components/NewInstallationModal';
+import QuotationModal from '../../components/QuotationModal';
+import VisitTypeBadge from '../../components/VisitTypeBadge';
+import { TRIGGER_TO_VISIT_TYPE, type VisitType } from '../../lib/visitFields';
+
+interface VisitPreset {
+  customerId?: string;
+  customerName?: string;
+  visitType?: VisitType;
+  date?: string;
+  requestId?: string;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,6 +52,9 @@ interface Customer {
   user_id: string | null;
   last_service_date: string | null;
   next_appointment: string | null;
+  contract_type: string | null;
+  warranty_expires: string | null;
+  device_install_date: string | null;
 }
 
 interface InventoryItem {
@@ -48,6 +68,17 @@ interface InventoryItem {
 interface Appointment {
   id: string;
   service_type: string;
+  visit_type: string;
+  device_id: string | null;
+  device: {
+    device_brand: string;
+    device_model: string | null;
+    serial_number: string | null;
+    location_in_premises: string | null;
+    warranty_expires: string | null;
+  } | null;
+  confirmed: boolean;
+  confirmed_at: string | null;
   scheduled_at: string;
   status: string;
   address: string;
@@ -80,6 +111,9 @@ function normaliseAppt(raw: Record<string, unknown>): Appointment {
     technician: Array.isArray(raw.technician)
       ? ((raw.technician as { full_name: string }[])[0] ?? null)
       : (raw.technician as { full_name: string } | null),
+    device: Array.isArray(raw.device)
+      ? ((raw.device as Appointment['device'][])[0] ?? null)
+      : (raw.device as Appointment['device']),
   };
 }
 
@@ -107,32 +141,6 @@ function getApptDateBounds(range: DateRangePreset, now: Date, cStart: string, cE
   }
 }
 
-// ── Service type catalogue ────────────────────────────────────────────────────
-
-const SERVICE_TYPES = [
-  'BioFamily 4-Stage Maintenance / صيانة فلتر 4 مراحل',
-  'BioFamily 7-Stage Maintenance / صيانة فلتر 7 مراحل',
-  'Ruhens Cooler Maintenance / صيانة كولر روهنس',
-  'Built-in Cooler Service / صيانة كولر بلت إن',
-  'New Installation / تركيب جهاز جديد',
-  'Emergency Repair / إصلاح طارئ',
-  'TDS Testing & Report / قياس TDS وتقرير',
-  'Warranty Service / خدمة ضمان',
-  'Follow-up Visit / زيارة متابعة',
-] as const;
-
-// Maps service_request.trigger_type → the nearest SERVICE_TYPES entry
-const TRIGGER_TO_SERVICE: Record<string, string> = {
-  emergency:        'Emergency Repair / إصلاح طارئ',
-  complaint:        'BioFamily 4-Stage Maintenance / صيانة فلتر 4 مراحل',
-  test_fail:        'TDS Testing & Report / قياس TDS وتقرير',
-  followup:         'Follow-up Visit / زيارة متابعة',
-  customer_request: 'BioFamily 4-Stage Maintenance / صيانة فلتر 4 مراحل',
-  part_due:         'BioFamily 4-Stage Maintenance / صيانة فلتر 4 مراحل',
-  schedule:         'BioFamily 4-Stage Maintenance / صيانة فلتر 4 مراحل',
-  warranty:         'Warranty Service / خدمة ضمان',
-  unknown_history:  'TDS Testing & Report / قياس TDS وتقرير',
-};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -153,15 +161,13 @@ export default function AdminDashboard() {
   const [dismissingId, setDismissingId] = useState<string | null>(null);
   const [technicians, setTechnicians]   = useState<{ id: string; full_name: string }[]>([]);
 
-  // Form state
-  const [formCustomer, setFormCustomer]             = useState('');
-  const [formDate, setFormDate]                     = useState('');
-  const [formTechnician, setFormTechnician]         = useState('');
-  const [formService, setFormService]               = useState('');
-  const [formAddress, setFormAddress]               = useState('');
-  const [formNotes, setFormNotes]                   = useState('');
-  const [formStatus, setFormStatus]                 = useState('pending');
-  const [formServiceRequestId, setFormServiceRequestId] = useState<string | null>(null);
+  // What the shared scheduler opens with
+  const [visitPreset, setVisitPreset] = useState<VisitPreset>({});
+  const [offerFor, setOfferFor] = useState<Customer | null>(null);
+  const [installFor, setInstallFor] = useState<Customer | null>(null);
+  const [convertFrom, setConvertFrom] = useState<
+    { quotationId: string; devices: { device_brand: string; catalog_id: string }[] } | null
+  >(null);
 
   // Inventory inline editing
   const [editingInventoryId, setEditingInventoryId]   = useState<string | null>(null);
@@ -181,13 +187,10 @@ export default function AdminDashboard() {
   const [customerFilter, setCustomerFilter] = useState<CustomerChip>('all');
 
   // Customer typeahead in New Appointment modal
-  const [custQuery, setCustQuery]       = useState('');
-  const [showCustDrop, setShowCustDrop] = useState(false);
 
   // ── Refs ────────────────────────────────────────────────────────────────────
   const searchTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchWrapRef    = useRef<HTMLDivElement>(null);
-  const custDropRef      = useRef<HTMLDivElement>(null);
   // Keep current date-range values accessible inside the realtime callback without stale closure
   const apptRangeRef     = useRef<DateRangePreset>('all');
   const customStartRef   = useRef('');
@@ -200,7 +203,6 @@ export default function AdminDashboard() {
   const [custSortDir, setCustSortDir]               = useState<'asc' | 'desc'>('asc');
   const [collapsedUrgencies, setCollapsedUrgencies] = useState<Set<string>>(new Set());
   const [techJobCounts, setTechJobCounts]           = useState<Record<string, number>>({});
-  const [conflictWarning, setConflictWarning]       = useState<string | null>(null);
   const [adminTab, setAdminTab]                     = useState<'schedule' | 'customers' | 'service_requests' | 'inventory' | 'invoices'>('schedule');
   const [techInProgressSet, setTechInProgressSet]   = useState<Set<string>>(new Set());
 
@@ -228,7 +230,7 @@ export default function AdminDashboard() {
     installation_date: string | null; warranty_expires: string | null;
     location_in_premises: string | null;
   }
-  const [devicesModal, setDevicesModal] = useState<{ custName: string; list: AdminDevice[] } | null>(null);
+  const [devicesModal, setDevicesModal] = useState<{ custId: string; custName: string; list: AdminDevice[] } | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [expiringContracts, setExpiringContracts] = useState<{ id: string; customer_name: string; end_date: string; plan_type: string }[]>([]);
 
@@ -238,7 +240,9 @@ export default function AdminDashboard() {
 
   // ── Add Customer / Add Technician modal state ────────────────────────────
   const [showAddCustomer, setShowAddCustomer]     = useState(false);
+  const [fullEditCustomerId, setFullEditCustomerId] = useState<string | null>(null);
   const [showAddTechnician, setShowAddTechnician] = useState(false);
+  const [showImportCustomers, setShowImportCustomers] = useState(false);
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -322,7 +326,7 @@ export default function AdminDashboard() {
     // No status filter here — filtering is client-side via apptStatusFilter.
     let q = supabase
       .from('appointments')
-      .select('id, service_type, scheduled_at, status, address, notes, approval_notes, customer_id, technician_id, customers(name, address, phone)')
+      .select('id, service_type, visit_type, device_id, confirmed, confirmed_at, scheduled_at, status, address, notes, approval_notes, customer_id, technician_id, customers(name, address, phone), device:customer_devices(device_brand, device_model, serial_number, location_in_premises, warranty_expires)')
       .order('scheduled_at')
       .limit(200);
     if (range === 'all') {
@@ -450,14 +454,11 @@ export default function AdminDashboard() {
     return () => { supabase.removeChannel(channel); };
   }, [loadAppointments]);
 
-  // Close search dropdown and customer typeahead on outside click
+  // Close the global search dropdown on outside click
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) {
         setSearchOpen(false);
-      }
-      if (custDropRef.current && !custDropRef.current.contains(e.target as Node)) {
-        setShowCustDrop(false);
       }
     }
     document.addEventListener('mousedown', onDocClick);
@@ -557,46 +558,29 @@ export default function AdminDashboard() {
 
   function closeAppointmentForm() {
     setShowForm(false);
-    setFormCustomer('');
-    setFormDate('');
-    setFormTechnician('');
-    setFormService('');
-    setFormAddress('');
-    setFormNotes('');
-    setFormStatus('pending');
-    setFormServiceRequestId(null);
-    setCustQuery('');
-    setShowCustDrop(false);
-    setConflictWarning(null);
+    setVisitPreset({});
   }
 
-  async function handleSubmitAppointment(e: React.FormEvent) {
-    e.preventDefault();
-    if (!formCustomer || !formDate) return;
+  async function confirmVisit(appt: Appointment, channel = 'phone') {
+    const { error } = await supabase
+      .from('appointments')
+      .update({
+        confirmed: true,
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: profile?.id ?? null,
+        confirmation_channel: channel,
+      })
+      .eq('id', appt.id);
 
-    const { data: newAppt, error } = await supabase.from('appointments').insert({
-      customer_id:   formCustomer,
-      technician_id: formTechnician || null,
-      service_type:  formService,
-      scheduled_at:  formDate,
-      status:        formStatus,
-      notes:         formNotes,
-      address:       formAddress,
-    }).select('id').single();
+    if (error) { showToast(error.message, 'error'); return; }
 
-    if (error) { showToast(t('toast.error'), 'error'); return; }
-
-    if (formServiceRequestId && newAppt?.id) {
-      await supabase.from('service_requests')
-        .update({ status: 'scheduled', linked_appointment_id: newAppt.id })
-        .eq('id', formServiceRequestId);
-      setServiceRequests(prev => prev.filter(r => r.id !== formServiceRequestId));
-    }
-
-    showToast(t('toast.success'), 'success');
-    closeAppointmentForm();
-    loadData();
-    loadAppointments(apptDateRange, customStart, customEnd);
+    showToast(t('visit.confirmedToast'), 'success');
+    setAppointments(prev => prev.map(a =>
+      a.id === appt.id ? { ...a, confirmed: true, confirmed_at: new Date().toISOString() } : a
+    ));
+    setApptDetailModal(prev =>
+      prev && prev.appt.id === appt.id ? { ...prev, appt: { ...prev.appt, confirmed: true } } : prev
+    );
   }
 
   async function handleDismissRequest(id: string) {
@@ -655,16 +639,13 @@ export default function AdminDashboard() {
   }
 
   function handleScheduleFromRequest(req: ServiceRequest) {
-    if (req.customers) {
-      setFormCustomer(req.customers.id);
-      setCustQuery(req.customers.name);
-      const custObj = customers.find(c => c.id === req.customers!.id);
-      setFormAddress(custObj?.address ?? '');
-    }
-    setFormService(TRIGGER_TO_SERVICE[req.trigger_type] ?? '');
-    if (req.suggested_date) setFormDate(req.suggested_date + 'T09:00');
-    setFormStatus('pending');
-    setFormServiceRequestId(req.id);
+    setVisitPreset({
+      customerId:   req.customers?.id,
+      customerName: req.customers?.name,
+      visitType:    TRIGGER_TO_VISIT_TYPE[req.trigger_type] ?? 'scheduled_visit',
+      date:         req.suggested_date ? `${req.suggested_date}T09:00` : undefined,
+      requestId:    req.id,
+    });
     setShowForm(true);
   }
 
@@ -692,29 +673,6 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   }
 
-  async function checkConflict(techId: string, dateTime: string) {
-    if (!techId || !dateTime) { setConflictWarning(null); return; }
-    const dt   = new Date(dateTime);
-    const from = new Date(dt.getTime() - 3600000).toISOString();
-    const to   = new Date(dt.getTime() + 3600000).toISOString();
-    const { data } = await supabase
-      .from('appointments')
-      .select('scheduled_at, customers(name)')
-      .eq('technician_id', techId)
-      .gte('scheduled_at', from)
-      .lt('scheduled_at', to)
-      .neq('status', 'cancelled')
-      .limit(1);
-    if (data && data.length > 0) {
-      const row = data[0] as { scheduled_at: string; customers: { name: string } | { name: string }[] | null };
-      const cName = Array.isArray(row.customers) ? row.customers[0]?.name : row.customers?.name;
-      const time  = new Date(row.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setConflictWarning(`${t('admin.technician')} already has a job at ${time}${cName ? ` — ${cName}` : ''}`);
-    } else {
-      setConflictWarning(null);
-    }
-  }
-
   function toggleUrgencySection(urgency: string) {
     setCollapsedUrgencies(prev => {
       const next = new Set(prev);
@@ -725,13 +683,14 @@ export default function AdminDashboard() {
 
   async function handleViewDevices(cust: Customer) {
     setDevicesLoading(true);
-    setDevicesModal({ custName: cust.name, list: [] });
+    setDevicesModal({ custId: cust.id, custName: cust.name, list: [] });
     const { data } = await supabase
       .from('customer_devices')
       .select('id, device_brand, device_model, serial_number, installation_date, warranty_expires, location_in_premises')
       .eq('customer_id', cust.id)
       .order('installation_date', { ascending: false });
     setDevicesModal({
+      custId: cust.id,
       custName: cust.name,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       list: ((data ?? []) as any[]).map(d => ({
@@ -765,8 +724,7 @@ export default function AdminDashboard() {
   }
 
   function handleQuickSchedule(cust: Customer) {
-    setFormCustomer(cust.id);
-    setCustQuery(cust.name);
+    setVisitPreset({ customerId: cust.id, customerName: cust.name });
     setShowForm(true);
   }
 
@@ -849,13 +807,6 @@ export default function AdminDashboard() {
     }
   });
 
-  const custDropResults = custQuery.trim()
-    ? customers.filter(c =>
-        c.name.toLowerCase().includes(custQuery.toLowerCase()) ||
-        c.phone.includes(custQuery)
-      ).slice(0, 8)
-    : [];
-
   // ── Range label helper ──────────────────────────────────────────────────────
   const rangeLabels: Record<DateRangePreset, string> = {
     all:   t('admin.filterAll'),
@@ -905,6 +856,14 @@ export default function AdminDashboard() {
             >
               <Plus className="w-4 h-4" />
               {i18n.language === 'ar' ? 'عميل جديد' : 'New Customer'}
+            </button>
+            {/* Import Customers */}
+            <button
+              onClick={() => setShowImportCustomers(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+            >
+              <Upload className="w-4 h-4" />
+              {t('customerImport.title')}
             </button>
             {/* Add New Technician */}
             <button
@@ -1098,180 +1057,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ── New Appointment Modal ── */}
-        {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-slate-900">{t('admin.newAppointment')}</h3>
-                <button onClick={closeAppointmentForm} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
-              </div>
-              <form onSubmit={handleSubmitAppointment} className="space-y-4">
-
-                {/* Customer typeahead */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.selectCustomer')}</label>
-                  <div className="relative" ref={custDropRef}>
-                    <div className="relative">
-                      <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={custQuery}
-                        onChange={e => {
-                          setCustQuery(e.target.value);
-                          setShowCustDrop(true);
-                          if (formCustomer) setFormCustomer('');
-                        }}
-                        onFocus={() => { if (custDropResults.length > 0) setShowCustDrop(true); }}
-                        placeholder={t('admin.customerSearchPlaceholder')}
-                        className={`w-full ps-9 pe-9 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition ${formCustomer ? 'border-green-400 bg-green-50' : 'border-slate-200 bg-slate-50'}`}
-                        autoComplete="off"
-                      />
-                      {formCustomer && (
-                        <CheckCircle className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
-                      )}
-                    </div>
-                    {showCustDrop && custDropResults.length > 0 && (
-                      <div className="absolute top-full mt-1 inset-x-0 bg-white rounded-xl border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
-                        {custDropResults.map(c => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => {
-                              setFormCustomer(c.id);
-                              setCustQuery(c.name);
-                              setFormAddress(c.address || '');
-                              setShowCustDrop(false);
-                            }}
-                            className="w-full text-start px-4 py-2.5 hover:bg-orange-50 transition border-b border-slate-50 last:border-0 flex items-center justify-between gap-3"
-                          >
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
-                              {c.last_service_date && (
-                                <p className="text-[10px] text-slate-400">{t('admin.lastService')}: {c.last_service_date}</p>
-                              )}
-                            </div>
-                            <span className="text-xs text-slate-400 font-mono shrink-0" dir="ltr">{c.phone}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {custQuery && !formCustomer && (
-                      <p className="text-xs text-amber-600 mt-1">
-                        {custDropResults.length === 0 ? t('admin.noSearchResults') : ''}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Address — auto-filled from customer, editable */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.address')}</label>
-                  <input
-                    type="text"
-                    value={formAddress}
-                    onChange={e => setFormAddress(e.target.value)}
-                    placeholder="Auto-filled when customer is selected"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.dateTime')}</label>
-                  <input
-                    type="datetime-local"
-                    value={formDate}
-                    onChange={e => { setFormDate(e.target.value); checkConflict(formTechnician, e.target.value); }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.selectTechnician')}</label>
-                  <select
-                    value={formTechnician}
-                    onChange={e => { setFormTechnician(e.target.value); checkConflict(e.target.value, formDate); }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="">{t('admin.selectTechnician')}</option>
-                    {technicians.map(tech => {
-                      const jobsToday = techJobCounts[tech.id] ?? 0;
-                      return (
-                        <option key={tech.id} value={tech.id}>
-                          {tech.full_name}{jobsToday > 0 ? ` (${jobsToday} today)` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {conflictWarning && (
-                    <div className="flex items-center gap-2 mt-1.5 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      {conflictWarning}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.serviceType')}</label>
-                  <select
-                    value={formService}
-                    onChange={e => setFormService(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="">— {t('admin.serviceType')} —</option>
-                    {SERVICE_TYPES.map(st => (
-                      <option key={st} value={st}>{st}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('common.status')}</label>
-                  <select
-                    value={formStatus}
-                    onChange={e => setFormStatus(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="pending">{t('status.pending')}</option>
-                    <option value="in_progress">{t('status.inProgress')}</option>
-                    <option value="completed">{t('status.completed')}</option>
-                    <option value="cancelled">{t('status.cancelled')}</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.notes')}</label>
-                  <textarea
-                    value={formNotes}
-                    onChange={e => setFormNotes(e.target.value)}
-                    rows={2}
-                    placeholder={t('admin.notes')}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="submit"
-                    disabled={!formCustomer}
-                    className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-xl text-sm transition"
-                  >
-                    {t('common.save')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closeAppointmentForm}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl text-sm transition"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
         {/* ── Tab Bar ── */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 mb-6">
           {(['schedule', 'customers', 'service_requests', 'inventory', 'invoices'] as const).map(tab => {
@@ -1397,6 +1182,7 @@ export default function AdminDashboard() {
                     <tr className="border-b border-slate-100 bg-slate-50/50">
                       <th className="text-start px-6 py-3 text-xs font-semibold text-slate-500">{t('admin.customer')}</th>
                       <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('admin.address')}</th>
+                      <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('visit.visitType')}</th>
                       <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('admin.technician')}</th>
                       <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('admin.time')}</th>
                       <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('common.status')}</th>
@@ -1427,6 +1213,7 @@ export default function AdminDashboard() {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-slate-600 text-xs">{appt.customers?.address || appt.address || '-'}</td>
+                          <td className="px-4 py-3"><VisitTypeBadge visitType={appt.visit_type} /></td>
                           <td className="px-4 py-3 text-slate-600">{appt.technician?.full_name ?? technicians.find(t => t.id === appt.technician_id)?.full_name ?? t('status.unassigned')}</td>
                           <td className="px-4 py-3 text-slate-500 text-xs">
                             {new Date(appt.scheduled_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
@@ -1436,6 +1223,12 @@ export default function AdminDashboard() {
                               <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium ${sc.bg} ${sc.text}`}>
                                 {sc.label}
                               </span>
+                              {!appt.confirmed && appt.status !== 'completed' && appt.status !== 'cancelled' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600">
+                                  <PhoneCall className="w-2.5 h-2.5" />
+                                  {t('visit.unconfirmed')}
+                                </span>
+                              )}
                               {appt.status === 'pending' && appt.notes?.toLowerCase().includes('customer rejected') && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700">
                                   <AlertTriangle className="w-2.5 h-2.5" />
@@ -1448,7 +1241,7 @@ export default function AdminDashboard() {
                       );
                     }) : (
                       <tr>
-                        <td colSpan={5} className="px-6 py-8 text-center text-slate-400">{t('common.noData')}</td>
+                        <td colSpan={6} className="px-6 py-8 text-center text-slate-400">{t('common.noData')}</td>
                       </tr>
                     )}
                   </tbody>
@@ -1605,6 +1398,20 @@ export default function AdminDashboard() {
                               >
                                 <CalendarPlus className="w-3 h-3" />
                               </button>
+                              <button
+                                onClick={() => setOfferFor(cust)}
+                                title={t('customerForm.sendOffer')}
+                                className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center text-purple-400 hover:text-purple-600 transition"
+                              >
+                                <FileSpreadsheet className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => { setConvertFrom(null); setInstallFor(cust); }}
+                                title={t('customerForm.newInstallation')}
+                                className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-400 hover:text-blue-600 transition"
+                              >
+                                <PackagePlus className="w-3 h-3" />
+                              </button>
                               <a
                                 href={`tel:${cust.phone}`}
                                 title={cust.phone}
@@ -1625,6 +1432,13 @@ export default function AdminDashboard() {
                                 className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
                               >
                                 <Cpu className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => setFullEditCustomerId(cust.id)}
+                                title={t('common.edit')}
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center text-slate-400 hover:text-blue-600 transition"
+                              >
+                                <Pencil className="w-3 h-3" />
                               </button>
                             </div>
                           </td>
@@ -2013,7 +1827,12 @@ export default function AdminDashboard() {
                 <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between z-10">
                   <div>
                     <h2 className="font-bold text-slate-900">{appt.customers?.name ?? '-'}</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">{appt.service_type}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <VisitTypeBadge visitType={appt.visit_type} />
+                      {appt.confirmed
+                        ? <span className="text-[11px] font-semibold text-green-700">✓ {t('visit.confirmed')}</span>
+                        : <span className="text-[11px] font-semibold text-slate-400">{t('visit.unconfirmed')}</span>}
+                    </div>
                   </div>
                   <button onClick={() => setApptDetailModal(null)} className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-slate-200 transition">
                     <X className="w-4 h-4 text-slate-600" />
@@ -2070,6 +1889,58 @@ export default function AdminDashboard() {
                       <p className="text-sm font-semibold text-slate-900 truncate">{appt.customers?.address || appt.address || '-'}</p>
                     </div>
                   </div>
+
+                  {/* Visit details */}
+                  {(appt.device || appt.notes) && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                      {appt.device && (
+                        <div className="flex items-start gap-2">
+                          <Cpu className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-400">{t('visit.device')}</p>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {[appt.device.device_brand, appt.device.device_model].filter(Boolean).join(' ')}
+                            </p>
+                            <p className="text-[11px] text-slate-500" dir="ltr">
+                              {[
+                                appt.device.serial_number && `SN ${appt.device.serial_number}`,
+                                appt.device.location_in_premises,
+                                appt.device.warranty_expires && `${t('admin.warranty')}: ${appt.device.warranty_expires}`,
+                              ].filter(Boolean).join(' · ')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {appt.notes && !isNeedsReview && (
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-400">{t('visit.notes')}</p>
+                            <p className="text-sm text-slate-700 whitespace-pre-wrap">{appt.notes}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Confirmation gate */}
+                  {!appt.confirmed && appt.status !== 'completed' && appt.status !== 'cancelled' && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-semibold text-slate-700">{t('visit.notConfirmedYet')}</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {(['phone', 'whatsapp', 'in_person'] as const).map(ch => (
+                          <button
+                            key={ch}
+                            onClick={() => confirmVisit(appt, ch)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            {t(`visit.confirmVia.${ch}`)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Contact row */}
                   {appt.customers?.phone && (
@@ -2266,6 +2137,76 @@ export default function AdminDashboard() {
       <AddCustomerModal
         onClose={() => setShowAddCustomer(false)}
         onCreated={() => { loadData(); }}
+        onOpenImport={() => { setShowAddCustomer(false); setShowImportCustomers(true); }}
+      />
+    )}
+
+    {/* ── Price offer / installation for an existing customer ── */}
+    {offerFor && (
+      <QuotationModal
+        customerId={offerFor.id}
+        customerName={offerFor.name}
+        customerPhone={offerFor.phone}
+        customerEmail={offerFor.email || undefined}
+        onClose={() => setOfferFor(null)}
+        onSaved={() => loadData()}
+        onConvert={(quotationId, devices) => {
+          setConvertFrom({ quotationId, devices });
+          setInstallFor(offerFor);
+          setOfferFor(null);
+        }}
+      />
+    )}
+
+    {installFor && (
+      <NewInstallationModal
+        customerId={installFor.id}
+        customerName={installFor.name}
+        presetDevices={convertFrom?.devices}
+        quotationId={convertFrom?.quotationId ?? null}
+        onClose={() => { setInstallFor(null); setConvertFrom(null); }}
+        onSaved={() => {
+          setInstallFor(null);
+          setConvertFrom(null);
+          loadData();
+          loadAppointments(apptDateRange, customStart, customEnd);
+        }}
+      />
+    )}
+
+    {/* ── Schedule Visit Modal ── */}
+    {showForm && (
+      <ScheduleVisitModal
+        presetCustomerId={visitPreset.customerId}
+        presetCustomerName={visitPreset.customerName}
+        presetVisitType={visitPreset.visitType}
+        presetDate={visitPreset.date}
+        serviceRequestId={visitPreset.requestId ?? null}
+        onClose={closeAppointmentForm}
+        onSaved={() => {
+          if (visitPreset.requestId) {
+            setServiceRequests(prev => prev.filter(r => r.id !== visitPreset.requestId));
+          }
+          loadData();
+          loadAppointments(apptDateRange, customStart, customEnd);
+        }}
+      />
+    )}
+
+    {/* ── Import Customers Modal ── */}
+    {showImportCustomers && (
+      <ImportCustomersModal
+        onClose={() => setShowImportCustomers(false)}
+        onImported={() => { loadData(); }}
+      />
+    )}
+
+    {/* ── Full Customer Edit Page ── */}
+    {fullEditCustomerId && (
+      <CustomerFullEditPage
+        customerId={fullEditCustomerId}
+        onClose={() => setFullEditCustomerId(null)}
+        onSaved={() => { loadData(); }}
       />
     )}
 

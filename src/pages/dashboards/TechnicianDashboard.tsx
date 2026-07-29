@@ -3,7 +3,7 @@ import {
   MapPin, Navigation, Phone, Calendar, Clock, CheckCircle, Package,
   Camera, FileText, ChevronRight, Home, ClipboardList, History,
   Settings, X, Send, WifiOff, Loader2, AlertTriangle,
-  Hourglass, ToggleLeft, ToggleRight, CalendarPlus, Receipt,
+  Hourglass, ToggleLeft, ToggleRight, CalendarPlus, Receipt, Cpu,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -11,6 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
+import VisitTypeBadge from '../../components/VisitTypeBadge';
 
 const DEFAULT_CHECKLIST_AR = [
   'التحقق من ضغط المياه عند المدخل',
@@ -31,6 +32,14 @@ interface Job {
   id: string;
   scheduled_at: string;
   service_type: string;
+  visit_type: string;
+  device_id: string | null;
+  device?: {
+    device_brand: string;
+    device_model: string | null;
+    serial_number: string | null;
+    location_in_premises: string | null;
+  } | null;
   status: JobStatus;
   address: string;
   notes: string;
@@ -59,6 +68,7 @@ interface HistoryJob {
   id: string;
   scheduled_at: string;
   service_type: string;
+  visit_type: string;
   status: JobStatus;
   customers: { name: string } | null;
 }
@@ -163,7 +173,7 @@ export default function TechnicianDashboard() {
     const [upcomingRes, historyRes, partsRes] = await Promise.all([
       supabase
         .from('appointments')
-        .select('id, scheduled_at, service_type, status, address, notes, confirmed, approval_notes, approval_granted, customer_id, customers(name, phone, address)')
+        .select('id, scheduled_at, service_type, visit_type, device_id, status, address, notes, confirmed, approval_notes, approval_granted, customer_id, customers(name, phone, address), device:customer_devices(device_brand, device_model, serial_number, location_in_premises)')
         .eq('technician_id', profile.id)
         // Show all non-completed, non-cancelled jobs: includes today/future pending AND
         // any in_progress or awaiting_approval jobs from previous days that weren't finished.
@@ -171,7 +181,7 @@ export default function TechnicianDashboard() {
         .order('scheduled_at'),
       supabase
         .from('appointments')
-        .select('id, scheduled_at, service_type, status, customers(name)')
+        .select('id, scheduled_at, service_type, visit_type, status, customers(name)')
         .eq('technician_id', profile.id)
         .lt('scheduled_at', todayISO)
         .eq('status', 'completed')
@@ -252,7 +262,7 @@ export default function TechnicianDashboard() {
     if (!selectedJob) return;
     const { data } = await supabase
       .from('appointments')
-      .select('id, scheduled_at, service_type, status, address, notes, confirmed, approval_notes, approval_granted, customer_id, customers(name, phone, address)')
+      .select('id, scheduled_at, service_type, visit_type, device_id, status, address, notes, confirmed, approval_notes, approval_granted, customer_id, customers(name, phone, address), device:customer_devices(device_brand, device_model, serial_number, location_in_premises)')
       .eq('id', selectedJob.id)
       .single();
     if (data) {
@@ -381,8 +391,16 @@ export default function TechnicianDashboard() {
         address: selectedJob.address,
         notes: followup?.reason ? `متابعة: ${followup.reason}` : '',
       });
-      await supabase.from('customers').update({ next_appointment: nextVisit }).eq('id', selectedJob.customer_id);
-      showToast(t('technician.nextVisitCreated'), 'success');
+      const { error: nextApptError } = await supabase
+        .from('customers')
+        .update({ next_appointment: nextVisit })
+        .eq('id', selectedJob.customer_id);
+      if (nextApptError) {
+        console.error('[TechnicianDashboard] failed to update customer next_appointment:', nextApptError.message);
+        showToast(t('toast.error'), 'error');
+      } else {
+        showToast(t('technician.nextVisitCreated'), 'success');
+      }
     }
 
     await supabase.from('activity_log').insert({
@@ -751,9 +769,15 @@ export default function TechnicianDashboard() {
                             <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
                             <span className="truncate">{job.customers?.address || job.address || '-'}</span>
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-green-700 font-medium">
-                            <FileText className="w-4 h-4 text-green-500 flex-shrink-0" />
-                            {job.service_type}
+                          <div className="flex items-center gap-2 text-sm">
+                            <VisitTypeBadge visitType={job.visit_type} size="md" />
+                            {job.device && (
+                              <span className="flex items-center gap-1 text-xs text-slate-500 truncate">
+                                <Cpu className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                {[job.device.device_brand, job.device.serial_number && `SN ${job.device.serial_number}`, job.device.location_in_premises]
+                                  .filter(Boolean).join(' · ')}
+                              </span>
+                            )}
                           </div>
                         </div>
                         {job.notes && (
@@ -826,7 +850,7 @@ export default function TechnicianDashboard() {
                     <tr key={job.id} className="hover:bg-slate-50/50 transition">
                       <td className="px-5 py-3 text-slate-600">{formatDate(job.scheduled_at)}</td>
                       <td className="px-5 py-3 font-medium text-slate-900">{job.customers?.name ?? '-'}</td>
-                      <td className="px-5 py-3 text-slate-600">{job.service_type}</td>
+                      <td className="px-5 py-3"><VisitTypeBadge visitType={job.visit_type} /></td>
                       <td className="px-5 py-3">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-green-100 text-green-700">
                           <CheckCircle className="w-3 h-3" />{t('status.completed')}

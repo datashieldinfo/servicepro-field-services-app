@@ -16,7 +16,7 @@ There are no tests. There is no test runner configured.
 
 ## Architecture
 
-**ServisGo / BioFamily Jordan** is a field-service management SPA (water filter maintenance) with four distinct user roles, each with its own dashboard.
+**ServisGo / BioFamily Jordan** is a field-service management SPA (water filter maintenance) with five distinct user roles, each with its own dashboard.
 
 ### Role → Route mapping
 
@@ -25,6 +25,7 @@ There are no tests. There is no test runner configured.
 | `owner` | `/dashboard/owner` | `OwnerDashboard.tsx` |
 | `technician` | `/dashboard/technician` | `TechnicianDashboard.tsx` |
 | `admin` | `/dashboard/admin` | `AdminDashboard.tsx` |
+| `manager` | `/dashboard/manager` | `ManagerDashboard.tsx` |
 | `customer` | `/dashboard/customer` | `CustomerDashboard.tsx` |
 
 `App.tsx` wraps everything in `<AuthProvider>` → `<ToastProvider>`. The `<RootRedirect>` component reads `profile.role` from `AuthContext` and redirects to the correct dashboard. `<ProtectedRoute allowedRole="…">` enforces role gating on every dashboard route.
@@ -94,6 +95,83 @@ Migrations live in `supabase/migrations/` in timestamp order. The `appointments`
 - **UI — Customer:** Fetches and displays own registered devices in dashboard.
 - **No create/edit UI** for devices in any dashboard — admin can only view, not add or edit.
 
+### Customer records (individual / corporate) + import
+
+One shape, one table, one UI — every role that can add customers renders the same modal.
+
+- **DB:** migration `20260728000001_customer_types_and_structured_address.sql` extends `customers` with
+  `customer_type` (individual/corporate), `country_code`, structured address
+  (`state`, `city`, `area`, `street`, `building_type` villa|building, `villa_name`/`villa_number`,
+  `building_name`/`building_number`/`flat_number`), map pin (`latitude`, `longitude`, `location_label`),
+  `notes`, `source` (manual/excel/vcf/contacts) and corporate fields (`company_name`, `trade_name`,
+  `industry`, `commercial_reg_no`, `tax_number`, `branch_count`, `payment_terms`, `billing_email`,
+  `contact_person_*`). `customers.address` still holds the composed one-line address for existing views.
+- **`src/lib/customerFields.ts`** — `CustomerForm` shape, country dial codes, Jordan governorates/cities,
+  Amman areas, corporate picklists, `composeAddress()`, `toCustomerRow()`, `validateCustomer()`.
+- **`src/lib/customerService.ts`** — single write path. `createCustomer()` generates a temporary password
+  (the UI no longer asks for one) and calls the `create-user` edge function when an email is given, then
+  completes the `customers` row; with no email it writes the record only (no portal login).
+  `createCustomersBulk()` inserts imported rows directly, isolating bad rows on batch failure.
+- **`src/lib/geocoding.ts`** — OpenStreetMap/Nominatim place search + reverse geocoding,
+  `navigator.geolocation`, and a paste-parser for coordinates / Google Maps links. No API key, fails soft.
+- **`src/components/CustomerFields.tsx`** — the fieldset itself (record type → identity → contact →
+  structured address → map pin → notes). Rendered by **both** `AddCustomerModal` and
+  `CustomerFullEditPage`, so creating and editing a customer are the same form for every role.
+- **`AddCustomerModal`** — record-type selector, mandatory phone with dial-code picklist, structured
+  address, `LocationPicker` map pin. Phone + name (+ city) are the only required fields.
+- **`CustomerFullEditPage`** — the same fieldset plus contract/warranty dates, devices, contracts and
+  filter status; hydrates via `fromCustomerRow()` and saves via `toCustomerUpdate()` (which preserves
+  `source`).
+- **`ImportCustomersModal`** — CSV template download/parse, `.vcf` (vCard 2.1/3.0/4.0, incl.
+  quoted-printable) parse, and the mobile Contact Picker API when the browser exposes it. Preview table
+  allows per-row edit/exclude before import. `.xlsx` is **not** parsed — users are told to save as CSV.
+
+### Visit workflow (typed visits — phase A)
+
+- **DB:** migration `20260728120000_visit_types_and_confirmation.sql` extends `appointments` with
+  `visit_type` (installation/preventive_maintenance/scheduled_visit/repair/emergency/survey),
+  `device_id` → `customer_devices`, the confirmation gate (`confirmed_at`, `confirmed_by`,
+  `confirmation_channel`), `created_by` and `next_visit_of`. A BEFORE UPDATE trigger
+  (`sync_appointment_confirmation`) keeps the legacy `confirmed` boolean and `confirmed_at` in
+  agreement whichever one a screen writes. Existing rows were backfilled from `service_type` text.
+- **`src/lib/visitFields.ts`** — `VISIT_TYPES` (badge colours, whether the type needs or registers a
+  device), confirmation channels, `VisitForm`, `toAppointmentRow()`, `validateVisit()`, and the
+  next-visit interval defaults used later by the follow-up scheduler.
+- **`ScheduleVisitModal`** — the single scheduler. Customer search (or preset), visit type, device
+  picker scoped to that customer, technician with a ±2h double-booking check, address defaulted from
+  the customer, notes, and the confirmation gate. Replaces the old inline form in `AdminDashboard`
+  and is reused by `ManagerDashboard` and the post-creation step in `AddCustomerModal`.
+- **`VisitTypeBadge`** — shared coloured badge, rendered in admin/manager/technician lists.
+- `service_type` is still written (the visit type's English label) so older queries and search keep
+  working; it is no longer typed by hand.
+
+### Portal access, one-time login link + first-login password change
+
+- **DB:** `20260728150000_portal_access_and_first_login.sql` adds `customers.portal_access`
+  (checkbox at registration) and `profiles.must_change_password`.
+- A login is created **only** when portal access is ticked (which requires an email); an email alone
+  no longer creates an account.
+- `create-user` returns `login_link` — a one-time magic link from `auth.admin.generateLink` — and sets
+  `must_change_password` on both the auth user and the profile. `AddCustomerModal` shows the link with
+  copy / WhatsApp / email share, and keeps the generated temporary password as the fallback for when
+  the link expires.
+- **`ChangePasswordGate`** is rendered by `ProtectedRoute` whenever `profile.must_change_password` is
+  true, so every dashboard is blocked until the user picks their own password.
+
+### Post-creation actions (offer / installation / visit)
+
+The success screen of `AddCustomerModal` offers three next steps, all reusable elsewhere:
+
+- **`QuotationModal`** — price offer. Lines are quoted from `inventory` (now carrying `category`:
+  part/device/accessory/service, with the device models seeded and priced) or typed by hand. Saves to
+  `quotations` with a `QT-YYYY-NNN` number from the `next_quote_number()` DB helper, then shares over
+  WhatsApp or email and records `sent_at`/`sent_channel`. Accepting converts to an installation.
+- **`NewInstallationModal`** — registers one or more `customer_devices` rows (brand, model, serial,
+  location, warranty months) **and** books the `installation` visit in a single save, linking the
+  visit to the first device and updating the customer's install/warranty dates. When it came from an
+  offer, the quotation is marked accepted with `converted_appointment_id`.
+- **`ScheduleVisitModal`** — the general scheduler for every other visit type.
+
 ### Internationalization
 
 - `src/i18n/index.ts` initialises i18next with `ar` (default) and `en` locales from `src/locales/`.
@@ -153,6 +231,9 @@ Accessible from `OwnerDashboard`. DB-connected: queries `appointments` (status=c
 - **WhatsApp number** — hardcoded to `0778068705` in `PrintableInvoice.tsx`; should be configurable. Emergency WhatsApp link in `CustomerDashboard` hardcoded to `+962791234567`.
 - **Contract create/edit UI** — DB table exists; Admin/Owner/Customer can view contracts but no UI to create or edit them.
 - **Customer devices create/edit UI** — DB table exists; Admin can view devices per customer but no UI to register or edit devices.
+- **Customer edit UI** — the new structured fields can be created and imported, but there is no edit screen for an existing customer yet (`AddCustomerModal` is create-only).
+- **`.xlsx` import** — only CSV is parsed (no spreadsheet dependency); `.xlsx` uploads are rejected with a "save as CSV" message.
+- **Contact Picker import** — implemented behind feature detection; only Android Chrome-family browsers expose `navigator.contacts` today.
 - **Payment/invoicing for admin-created jobs** — invoice creation is only triggered from the Technician dashboard job completion flow.
 - **`get_my_role()` helper function** — referenced in `invoices` RLS policies; must exist in the DB (not in any migration file in this repo — likely created outside or in a missing migration).
 - **`inventory_part_name_unique` index conflict** — migration `20260529000002` uses `ON CONFLICT DO NOTHING` (no unique index); migration `20260529000003` creates `CREATE UNIQUE INDEX inventory_part_name_unique` and uses `ON CONFLICT (part_name) DO UPDATE`. If both migrations ran, the index creation in `_000003` may fail if `_000002` left duplicate `part_name` rows. The deduplication SQL (DELETE duplicates then CREATE UNIQUE INDEX) must be run before applying `_000003`.
