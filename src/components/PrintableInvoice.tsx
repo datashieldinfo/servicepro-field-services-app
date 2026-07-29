@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { X, Printer, MessageCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Logo from './Logo';
@@ -50,20 +51,19 @@ export default function PrintableInvoice({ invoice, onClose }: Props) {
     `فاتورة رقم ${invoice.invoiceNumber}\nالعميل: ${invoice.customer.name}\nالإجمالي: ${invoice.totalAmount.toFixed(2)} JOD\nالحالة: ${isPaid ? 'مدفوعة ✓' : 'معلقة'}`
   );
 
-  return (
+  // Into <body> so the print rule does not hide the overlay along with #root.
+  return createPortal(
     <>
       {/* Print-only styles injected via a style tag */}
       <style>{`
         @media print {
-          body > *:not(#print-invoice-overlay) { display: none !important; }
-          #print-invoice-overlay { position: static !important; background: white !important; padding: 0 !important; }
-          .no-print { display: none !important; }
           #invoice-card { box-shadow: none !important; border: none !important; max-width: 100% !important; }
         }
       `}</style>
 
       <div
         id="print-invoice-overlay"
+        data-print-overlay
         className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 overflow-y-auto"
         onClick={onClose}
       >
@@ -196,6 +196,7 @@ export default function PrintableInvoice({ invoice, onClose }: Props) {
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

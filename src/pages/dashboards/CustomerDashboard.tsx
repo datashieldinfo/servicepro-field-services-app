@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Calendar, Clock, CheckCircle, Bell, Gift, AlertTriangle, Phone,
   MessageCircle, Home, CalendarDays, BellRing, Users, ChevronRight,
@@ -798,9 +799,14 @@ export default function CustomerDashboard() {
     try {
       if (!selectedReport && !reportLoading) return null;
 
-      return (
+      /*
+        Into <body>: the print rule in index.css hides every child of body
+        except this overlay, so nesting it inside #root printed a blank page.
+      */
+      return createPortal(
         <div
           id="print-report-overlay"
+          data-print-overlay
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
         >
           {reportLoading ? (
@@ -922,7 +928,8 @@ export default function CustomerDashboard() {
               </div>
             </div>
           ) : null}
-        </div>
+        </div>,
+        document.body,
       );
     } catch (err) {
       console.error('renderServiceReport error:', err);

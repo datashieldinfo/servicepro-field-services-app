@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
 import { useAuth } from '../contexts/AuthContext';
+import PrintableQuotation from './PrintableQuotation';
 import {
   defaultValidUntil,
   lineTotal,
@@ -33,6 +34,7 @@ interface Props {
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;
+  customerAddress?: string;
   onClose: () => void;
   onSaved: (quotationId: string) => void;
   /** Offered after saving: turn the quoted devices into an installation. */
@@ -61,6 +63,7 @@ export default function QuotationModal({
   customerName,
   customerPhone,
   customerEmail,
+  customerAddress,
   onClose,
   onSaved,
   onConvert,
@@ -74,9 +77,10 @@ export default function QuotationModal({
   const [lines, setLines] = useState<DraftLine[]>([newLine()]);
   const [discount, setDiscount] = useState(0);
   const [validUntil, setValidUntil] = useState(defaultValidUntil());
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(() => t('quote.notesDefault'));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<{ id: string; quote_number: string } | null>(null);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -254,7 +258,7 @@ export default function QuotationModal({
                   {t('quote.viaEmail')}
                 </button>
                 <button
-                  onClick={() => { markSent('print'); window.print(); }}
+                  onClick={() => { markSent('print'); setPrinting(true); }}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-semibold transition"
                 >
                   <Printer className="w-4 h-4" />
@@ -456,6 +460,29 @@ export default function QuotationModal({
           </div>
         )}
       </div>
+
+      {printing && saved && (
+        <PrintableQuotation
+          quote={{
+            quoteNumber: saved.quote_number,
+            issuedAt: new Date().toISOString(),
+            validUntil: validUntil || null,
+            customer: {
+              name: customerName,
+              address: customerAddress ?? '',
+              phone: customerPhone ?? '',
+              email: customerEmail,
+            },
+            items: lines.filter(l => l.name.trim()).map(({ key, ...item }) => { void key; return item; }),
+            subtotal,
+            discount,
+            total,
+            currency: 'JOD',
+            notes: notes.trim(),
+          }}
+          onClose={() => setPrinting(false)}
+        />
+      )}
     </div>
   );
 }
