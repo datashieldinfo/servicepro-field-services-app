@@ -252,7 +252,10 @@
     "customerSearchPlaceholder": "ابحث بالاسم أو الهاتف...",
     "clickToChangeStatus": "اضغط لتغيير الحالة",
     "portalTitle": "بوابة المسؤول",
-    "portalDesc": "إدارة جدولة زيارات الصيانة وتعيين فنيي التحلية والتواصل مع العملاء ومتابعة المواعيد"
+    "portalDesc": "إدارة جدولة زيارات الصيانة وتعيين فنيي التحلية والتواصل مع العملاء ومتابعة المواعيد",
+    "filterAwaitingAction": "بانتظار إجراء",
+    "awaitingActionBadge": "لم يُتخذ إجراء",
+    "nextStep": "الخطوة التالية"
   },
   "technician": {
     "hey": "مرحباً",
@@ -779,7 +782,17 @@
       "part": "قطعة",
       "accessory": "ملحق",
       "service": "خدمة"
-    }
+    },
+    "notesDefault": "يشمل العرض تكلفة التركيب والضمان. موعد التركيب حسب توفر المواعيد.",
+    "recordDecision": "تسجيل رد العميل",
+    "decisionPrompt": "ما قرار العميل بشأن هذا العرض؟",
+    "acceptAndInstall": "موافقة — احجز التركيب",
+    "acceptAndInstallDesc": "يعتمد العرض ويفتح شاشة التركيب بالأجهزة المعروضة.",
+    "acceptOnly": "موافقة — سيتم حجز التركيب لاحقاً",
+    "decline": "العميل رفض العرض",
+    "approvedToast": "تم اعتماد العرض {{number}}",
+    "declinedToast": "تم تسجيل رفض العرض {{number}}",
+    "viewPrint": "عرض / طباعة العرض"
   },
   "firstLogin": {
     "title": "اختر كلمة المرور",

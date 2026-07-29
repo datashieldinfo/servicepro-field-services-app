@@ -252,7 +252,10 @@
     "customerSearchPlaceholder": "Search by name or phone...",
     "clickToChangeStatus": "Click to change status",
     "portalTitle": "Office Admin Portal",
-    "portalDesc": "Manage maintenance visit scheduling, assign RO technicians, handle customer communication, and track appointments"
+    "portalDesc": "Manage maintenance visit scheduling, assign RO technicians, handle customer communication, and track appointments",
+    "filterAwaitingAction": "Awaiting action",
+    "awaitingActionBadge": "No action yet",
+    "nextStep": "Next step"
   },
   "technician": {
     "hey": "Hey",
@@ -779,7 +782,17 @@
       "part": "Part",
       "accessory": "Accessory",
       "service": "Service"
-    }
+    },
+    "notesDefault": "The offer includes the installation and the warranty cost. Installation time is subject to availability.",
+    "recordDecision": "Record the customer's answer",
+    "decisionPrompt": "What did the customer decide about this offer?",
+    "acceptAndInstall": "Accepted — book the installation",
+    "acceptAndInstallDesc": "Marks the offer accepted and opens the installation screen with the quoted devices.",
+    "acceptOnly": "Accepted — book the installation later",
+    "decline": "Customer declined the offer",
+    "approvedToast": "Offer {{number}} marked as accepted",
+    "declinedToast": "Offer {{number}} marked as declined",
+    "viewPrint": "View / print the offer"
   },
   "firstLogin": {
     "title": "Choose your password",

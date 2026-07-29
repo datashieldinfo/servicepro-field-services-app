@@ -12,8 +12,22 @@
   }
 }
 
+/*
+  Printing. Any printable document marks its overlay with `data-print-overlay`
+  and renders it into <body> (via a portal), so everything else on the page can
+  be hidden. Naming a single overlay here would hide the others — that is what
+  made invoices and price offers print a blank page.
+*/
 @media print {
-  body > *:not(#print-report-overlay) { display: none !important; }
-  #print-report-overlay { position: static !important; background: white !important; }
+  body > *:not([data-print-overlay]) { display: none !important; }
+
+  [data-print-overlay] {
+    position: static !important;
+    background: white !important;
+    padding: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
   .no-print { display: none !important; }
 }
