@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle, Package, ChevronRight, Zap, Wrench, MessageSquare,
   Droplets, HelpCircle, X, Loader2, SlidersHorizontal, Download, ChevronDown,
   ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload, Pencil, FileText,
-  FileSpreadsheet, PackagePlus, Sparkles, Printer,
+  FileSpreadsheet, Sparkles,
   PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -18,25 +18,13 @@ import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import AddTechnicianModal from '../../components/AddTechnicianModal';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import ScheduleVisitModal from '../../components/ScheduleVisitModal';
-import NewInstallationModal from '../../components/NewInstallationModal';
-import QuotationModal from '../../components/QuotationModal';
-import PrintableQuotation, { type QuotationData } from '../../components/PrintableQuotation';
-import type { QuotationItem } from '../../lib/quotationFields';
+import CustomerNextStep from '../../components/CustomerNextStep';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { TRIGGER_TO_VISIT_TYPE, type VisitType } from '../../lib/visitFields';
-
-interface OpenOffer {
-  id: string;
-  quote_number: string;
-  status: string;
-  total_amount: number;
-  items: QuotationItem[];
-  valid_until: string | null;
-  notes: string;
-  subtotal: number;
-  discount: number;
-  created_at: string;
-}
+import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
+import { downloadCsv, whatsAppLink } from '../../lib/format';
+import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
+import { confirmAppointment, dismissServiceRequest, markInvoicePaid, setInventoryQuantity } from '../../lib/operations';
 
 interface VisitPreset {
   customerId?: string;
@@ -178,18 +166,10 @@ export default function AdminDashboard() {
 
   // What the shared scheduler opens with
   const [visitPreset, setVisitPreset] = useState<VisitPreset>({});
-  const [offerFor, setOfferFor] = useState<Customer | null>(null);
   /** Customers with no visit and no offer — registered and then forgotten. */
   const [awaitingActionIds, setAwaitingActionIds] = useState<Set<string>>(new Set());
   /** Offers already sent and still waiting on the customer's word. */
   const [openOffers, setOpenOffers] = useState<Record<string, OpenOffer>>({});
-  const [approveOffer, setApproveOffer] = useState<{ customer: Customer; offer: OpenOffer } | null>(null);
-  const [viewOffer, setViewOffer] = useState<QuotationData | null>(null);
-  const [actionMenuFor, setActionMenuFor] = useState<string | null>(null);
-  const [installFor, setInstallFor] = useState<Customer | null>(null);
-  const [convertFrom, setConvertFrom] = useState<
-    { quotationId: string; devices: { device_brand: string; catalog_id: string }[] } | null
-  >(null);
 
   // Inventory inline editing
   const [editingInventoryId, setEditingInventoryId]   = useState<string | null>(null);
@@ -367,54 +347,28 @@ export default function AdminDashboard() {
   }, []);
 
   async function loadInvoices() {
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-    const { data } = await supabase
-      .from('invoices')
-      .select('id, invoice_number, total_amount, payment_method, payment_status, issued_at, appointment_id, parts_used, labor_cost, customer_id, technician_id, customers(name, address, phone), technician:profiles!invoices_technician_id_fkey(full_name), appointments(service_type, scheduled_at)')
-      .gte('issued_at', startOfMonth)
-      .order('issued_at', { ascending: false })
-      .limit(100);
+    const rows = await fetchInvoices({ since: startOfMonth(), limit: 100 });
 
-    if (data) {
-      type RawInv = Record<string, unknown>;
-      const rows: AdminInvoiceRow[] = (data as RawInv[]).map(inv => {
-        const cust = Array.isArray(inv.customers) ? (inv.customers as RawInv[])[0] : inv.customers as RawInv | null;
-        const tech = Array.isArray(inv.technician) ? (inv.technician as RawInv[])[0] : inv.technician as RawInv | null;
-        const appt = Array.isArray(inv.appointments) ? (inv.appointments as RawInv[])[0] : inv.appointments as RawInv | null;
-        const parts = (Array.isArray(inv.parts_used) ? inv.parts_used : []) as { name: string; quantity: number; unit_price: number }[];
-        const invoiceData: InvoiceData = {
-          invoiceNumber: inv.invoice_number as string,
-          issuedAt: inv.issued_at as string,
-          customer: { name: cust?.name as string ?? '-', address: cust?.address as string ?? '-', phone: cust?.phone as string ?? '-' },
-          technicianName: tech?.full_name as string ?? '-',
-          serviceType: appt?.service_type as string ?? '-',
-          serviceDate: appt?.scheduled_at as string ?? inv.issued_at as string,
-          parts: parts.map(p => ({ name: p.name, quantity: p.quantity, unitPrice: p.unit_price })),
-          laborCost: inv.labor_cost as number ?? 0,
-          totalAmount: inv.total_amount as number ?? 0,
-          paymentMethod: inv.payment_method as string ?? 'cash',
-          paymentStatus: inv.payment_status as string ?? 'pending',
-        };
-        return {
-          id: inv.id as string,
-          invoice_number: inv.invoice_number as string,
-          customer_name: cust?.name as string ?? '-',
-          technician_name: tech?.full_name as string ?? '-',
-          total_amount: inv.total_amount as number ?? 0,
-          payment_method: inv.payment_method as string ?? 'cash',
-          payment_status: inv.payment_status as string ?? 'pending',
-          issued_at: inv.issued_at as string,
-          appointment_id: inv.appointment_id as string | null,
-          invoiceData,
-        };
-      });
-      setAdminInvoices(rows);
-    }
+    setAdminInvoices(rows.map(inv => {
+      const { customer, technician } = invoiceEmbeds(inv);
+      return {
+        id: inv.id as string,
+        invoice_number: inv.invoice_number as string,
+        customer_name: customer?.name ?? '-',
+        technician_name: technician?.full_name ?? '-',
+        total_amount: (inv.total_amount as number) ?? 0,
+        payment_method: (inv.payment_method as string) ?? 'cash',
+        payment_status: (inv.payment_status as string) ?? 'pending',
+        issued_at: inv.issued_at as string,
+        appointment_id: inv.appointment_id as string | null,
+        invoiceData: toInvoiceData(inv),
+      };
+    }));
   }
 
   async function handleMarkPaid(id: string) {
     setMarkingPaid(id);
-    const { error } = await supabase.from('invoices').update({ payment_status: 'paid', paid_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await markInvoicePaid(id);
     if (!error) {
       setAdminInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: 'paid', invoiceData: inv.invoiceData ? { ...inv.invoiceData, paymentStatus: 'paid' } : undefined } : inv));
       showToast(t('toast.success'), 'success');
@@ -440,7 +394,7 @@ export default function AdminDashboard() {
     if (invRes.error) console.error('[AdminDashboard] inventory:', invRes.error.message);
     const customerRows = (custRes.data ?? []) as Customer[];
     setCustomers(customerRows);
-    loadCustomerActionState(customerRows);
+    refreshActionState(customerRows);
     setInventory(invRes.data ?? []);
     setStats({
       today:     todayCount.count ?? 0,
@@ -589,102 +543,14 @@ export default function AdminDashboard() {
    * A customer registered with no visit and no offer has been forgotten —
    * mark them so the office can pick the thread back up.
    */
-  const loadCustomerActionState = useCallback(async (customerRows: Customer[]) => {
-    const [apptRes, quoteRes] = await Promise.all([
-      supabase.from('appointments').select('customer_id'),
-      supabase.from('quotations')
-        .select('id, customer_id, quote_number, status, total_amount, items, valid_until, notes, subtotal, discount, created_at')
-        .order('created_at', { ascending: false }),
-    ]);
-
-    const withVisit = new Set(
-      ((apptRes.data ?? []) as { customer_id: string | null }[])
-        .map(r => r.customer_id).filter(Boolean) as string[]
-    );
-
-    const quotes = (quoteRes.data ?? []) as (OpenOffer & { customer_id: string })[];
-    const withOffer = new Set(quotes.map(q => q.customer_id));
-
-    // Newest offer per customer that the customer has not answered yet.
-    const pending: Record<string, OpenOffer> = {};
-    quotes.forEach(q => {
-      if (!pending[q.customer_id] && (q.status === 'draft' || q.status === 'sent')) {
-        pending[q.customer_id] = q;
-      }
-    });
-
-    setOpenOffers(pending);
-    setAwaitingActionIds(new Set(
-      customerRows.filter(c => !withVisit.has(c.id) && !withOffer.has(c.id)).map(c => c.id)
-    ));
+  const refreshActionState = useCallback(async (customerRows: Customer[]) => {
+    const { awaiting, offers } = await loadCustomerActionState(customerRows);
+    setAwaitingActionIds(awaiting);
+    setOpenOffers(offers);
   }, []);
 
-  /** The customer said yes — record it and offer to book the installation. */
-  async function acceptOffer(customer: Customer, offer: OpenOffer, thenInstall: boolean) {
-    const { error } = await supabase
-      .from('quotations')
-      .update({ status: 'accepted', accepted_at: new Date().toISOString() })
-      .eq('id', offer.id);
-
-    if (error) { showToast(error.message, 'error'); return; }
-
-    showToast(t('quote.approvedToast', { number: offer.quote_number }), 'success');
-    setApproveOffer(null);
-
-    if (thenInstall) {
-      setConvertFrom({
-        quotationId: offer.id,
-        devices: (offer.items ?? [])
-          .filter(i => i.kind === 'device')
-          .map(i => ({ device_brand: i.name, catalog_id: i.ref_id ?? '' })),
-      });
-      setInstallFor(customer);
-    }
-    loadData();
-  }
-
-  async function declineOffer(offer: OpenOffer) {
-    const { error } = await supabase
-      .from('quotations')
-      .update({ status: 'rejected', rejected_at: new Date().toISOString() })
-      .eq('id', offer.id);
-
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast(t('quote.declinedToast', { number: offer.quote_number }), 'success');
-    setApproveOffer(null);
-    loadData();
-  }
-
-  function openOfferPrint(customer: Customer, offer: OpenOffer) {
-    setViewOffer({
-      quoteNumber: offer.quote_number,
-      issuedAt: offer.created_at,
-      validUntil: offer.valid_until,
-      customer: {
-        name: customer.name,
-        address: customer.address ?? '',
-        phone: customer.phone ?? '',
-        email: customer.email || undefined,
-      },
-      items: offer.items ?? [],
-      subtotal: Number(offer.subtotal ?? 0),
-      discount: Number(offer.discount ?? 0),
-      total: Number(offer.total_amount ?? 0),
-      currency: 'JOD',
-      notes: offer.notes ?? '',
-    });
-  }
-
   async function confirmVisit(appt: Appointment, channel = 'phone') {
-    const { error } = await supabase
-      .from('appointments')
-      .update({
-        confirmed: true,
-        confirmed_at: new Date().toISOString(),
-        confirmed_by: profile?.id ?? null,
-        confirmation_channel: channel,
-      })
-      .eq('id', appt.id);
+    const { error } = await confirmAppointment(appt.id, profile?.id, channel);
 
     if (error) { showToast(error.message, 'error'); return; }
 
@@ -699,7 +565,7 @@ export default function AdminDashboard() {
 
   async function handleDismissRequest(id: string) {
     setDismissingId(id);
-    const { error } = await supabase.from('service_requests').update({ status: 'dismissed' }).eq('id', id);
+    const { error } = await dismissServiceRequest(id);
     if (!error) {
       setServiceRequests(prev => prev.filter(r => r.id !== id));
     } else {
@@ -742,7 +608,7 @@ export default function AdminDashboard() {
   }
 
   async function handleInventoryUpdate(id: string) {
-    const { error } = await supabase.from('inventory').update({ quantity: editingInventoryQty }).eq('id', id);
+    const { error } = await setInventoryQuantity(id, editingInventoryQty);
     if (!error) {
       setInventory(prev => prev.map(i => i.id === id ? { ...i, quantity: editingInventoryQty } : i));
       showToast(t('toast.success'), 'success');
@@ -777,14 +643,7 @@ export default function AdminDashboard() {
     const rows = filteredCustomers.map(c => [
       c.name, c.phone, c.email, c.last_service_date ?? '', c.next_appointment ?? '',
     ]);
-    const csv = [headers, ...rows]
-      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'customers.csv'; a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv('customers.csv', headers, rows);
   }
 
   function toggleUrgencySection(urgency: string) {
@@ -835,11 +694,6 @@ export default function AdminDashboard() {
         return { id: r.id as string, customer_name: cust, end_date: r.end_date as string, plan_type: r.plan_type as string };
       }));
     }
-  }
-
-  function handleQuickSchedule(cust: Customer) {
-    setVisitPreset({ customerId: cust.id, customerName: cust.name });
-    setShowForm(true);
   }
 
   // ── Derived / filtered data ─────────────────────────────────────────────────
@@ -1527,77 +1381,13 @@ export default function AdminDashboard() {
                           <td className="px-4 py-3">
                             <div className="flex gap-1.5">
                               {/* Next step — the same choices as the post-registration window */}
-                              <div className="relative">
-                                <button
-                                  onClick={() => setActionMenuFor(actionMenuFor === cust.id ? null : cust.id)}
-                                  title={t('customerForm.whatNext')}
-                                  className={`h-7 px-2 rounded-lg flex items-center gap-1 text-[11px] font-bold transition ${
-                                    awaitingAction || pendingOffer
-                                      ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
-                                  }`}
-                                >
-                                  <Sparkles className="w-3 h-3" />
-                                  {t('admin.nextStep')}
-                                  <ChevronDown className="w-3 h-3" />
-                                </button>
-
-                                {actionMenuFor === cust.id && (
-                                  <div className="absolute z-30 mt-1 end-0 w-60 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-                                    {pendingOffer && (
-                                      <>
-                                        <button
-                                          onClick={() => { setActionMenuFor(null); setApproveOffer({ customer: cust, offer: pendingOffer }); }}
-                                          className="w-full flex items-start gap-2 px-3 py-2.5 hover:bg-green-50 transition text-start border-b border-slate-100"
-                                        >
-                                          <CheckCircle className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
-                                          <span>
-                                            <span className="block text-xs font-semibold text-slate-800">{t('quote.recordDecision')}</span>
-                                            <span className="block text-[11px] text-slate-500">{pendingOffer.quote_number} — {Number(pendingOffer.total_amount).toFixed(2)} JOD</span>
-                                          </span>
-                                        </button>
-                                        <button
-                                          onClick={() => { setActionMenuFor(null); openOfferPrint(cust, pendingOffer); }}
-                                          className="w-full flex items-start gap-2 px-3 py-2.5 hover:bg-slate-50 transition text-start border-b border-slate-100"
-                                        >
-                                          <Printer className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                                          <span className="text-xs font-semibold text-slate-800">{t('quote.viewPrint')}</span>
-                                        </button>
-                                      </>
-                                    )}
-                                    <button
-                                      onClick={() => { setActionMenuFor(null); setOfferFor(cust); }}
-                                      className="w-full flex items-start gap-2 px-3 py-2.5 hover:bg-purple-50 transition text-start border-b border-slate-100"
-                                    >
-                                      <FileSpreadsheet className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                                      <span>
-                                        <span className="block text-xs font-semibold text-slate-800">{t('customerForm.sendOffer')}</span>
-                                        <span className="block text-[11px] text-slate-500">{t('customerForm.sendOfferDesc')}</span>
-                                      </span>
-                                    </button>
-                                    <button
-                                      onClick={() => { setActionMenuFor(null); setConvertFrom(null); setInstallFor(cust); }}
-                                      className="w-full flex items-start gap-2 px-3 py-2.5 hover:bg-blue-50 transition text-start border-b border-slate-100"
-                                    >
-                                      <PackagePlus className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                                      <span>
-                                        <span className="block text-xs font-semibold text-slate-800">{t('customerForm.newInstallation')}</span>
-                                        <span className="block text-[11px] text-slate-500">{t('customerForm.newInstallationDesc')}</span>
-                                      </span>
-                                    </button>
-                                    <button
-                                      onClick={() => { setActionMenuFor(null); handleQuickSchedule(cust); }}
-                                      className="w-full flex items-start gap-2 px-3 py-2.5 hover:bg-orange-50 transition text-start"
-                                    >
-                                      <CalendarPlus className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
-                                      <span>
-                                        <span className="block text-xs font-semibold text-slate-800">{t('customerForm.scheduleVisit')}</span>
-                                        <span className="block text-[11px] text-slate-500">{t('customerForm.scheduleVisitDesc')}</span>
-                                      </span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                              <CustomerNextStep
+                                customer={cust}
+                                offer={openOffers[cust.id] ?? null}
+                                highlight={awaitingAction}
+                                onChanged={() => loadData()}
+                                onFinished={() => loadAppointments(apptDateRange, customStart, customEnd)}
+                              />
                               <a
                                 href={`tel:${cust.phone}`}
                                 title={cust.phone}
@@ -1740,11 +1530,7 @@ export default function AdminDashboard() {
                     onClick={() => {
                       const headers = [t('invoice.invoiceNumber'), t('invoice.customerName'), t('invoice.technicianName'), t('invoice.amount'), t('invoice.paymentMethod'), t('invoice.paymentStatus'), 'Date'];
                       const rows = adminInvoices.map(inv => [inv.invoice_number, inv.customer_name, inv.technician_name, inv.total_amount.toFixed(2), inv.payment_method, inv.payment_status, new Date(inv.issued_at).toLocaleDateString('en-GB')]);
-                      const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-                      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a'); a.href = url; a.download = 'invoices.csv'; a.click();
-                      URL.revokeObjectURL(url);
+                      downloadCsv('invoices.csv', headers, rows);
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600 transition"
                   >
@@ -2135,7 +1921,7 @@ export default function AdminDashboard() {
                         <Phone className="w-3.5 h-3.5" />{appt.customers.phone}
                       </a>
                       <a
-                        href={`https://wa.me/${appt.customers.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Regarding your appointment: ${appt.service_type}`)}`}
+                        href={whatsAppLink(appt.customers.phone, `Regarding your appointment: ${appt.service_type}`)}
                         target="_blank" rel="noopener noreferrer"
                         className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl text-xs font-semibold transition"
                       >
@@ -2324,115 +2110,6 @@ export default function AdminDashboard() {
         onClose={() => setShowAddCustomer(false)}
         onCreated={() => { loadData(); }}
         onOpenImport={() => { setShowAddCustomer(false); setShowImportCustomers(true); }}
-      />
-    )}
-
-    {/* ── The customer's answer on an offer, recorded whenever it arrives ── */}
-    {approveOffer && (
-      <div className="fixed inset-0 bg-black/50 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setApproveOffer(null)}>
-        <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-green-50 rounded-xl flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <h2 className="font-bold text-slate-900 text-base">{t('quote.recordDecision')}</h2>
-                <p className="text-xs text-slate-500">{approveOffer.customer.name}</p>
-              </div>
-            </div>
-            <button onClick={() => setApproveOffer(null)} className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-slate-200 transition">
-              <X className="w-4 h-4 text-slate-600" />
-            </button>
-          </div>
-
-          <div className="p-5 space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-slate-900" dir="ltr">{approveOffer.offer.quote_number}</span>
-                <span className="font-bold text-slate-900">{Number(approveOffer.offer.total_amount).toFixed(2)} JOD</span>
-              </div>
-              <ul className="space-y-0.5">
-                {(approveOffer.offer.items ?? []).map((item, i) => (
-                  <li key={i} className="text-xs text-slate-600 flex justify-between gap-3">
-                    <span className="truncate">{item.name} × {item.qty}</span>
-                    <span className="shrink-0">{Number(item.total).toFixed(2)}</span>
-                  </li>
-                ))}
-              </ul>
-              {approveOffer.offer.valid_until && (
-                <p className="text-[11px] text-slate-400 mt-2">
-                  {t('quote.validUntil')}: {approveOffer.offer.valid_until}
-                </p>
-              )}
-            </div>
-
-            <p className="text-sm text-slate-600">{t('quote.decisionPrompt')}</p>
-
-            <div className="space-y-2">
-              <button
-                onClick={() => acceptOffer(approveOffer.customer, approveOffer.offer, true)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-green-200 bg-green-50 hover:border-green-400 transition text-start"
-              >
-                <PackagePlus className="w-5 h-5 text-green-700 shrink-0" />
-                <span>
-                  <span className="block text-sm font-semibold text-green-900">{t('quote.acceptAndInstall')}</span>
-                  <span className="block text-[11px] text-green-700">{t('quote.acceptAndInstallDesc')}</span>
-                </span>
-              </button>
-              <button
-                onClick={() => acceptOffer(approveOffer.customer, approveOffer.offer, false)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition text-start"
-              >
-                <CheckCircle className="w-5 h-5 text-slate-500 shrink-0" />
-                <span className="text-sm font-semibold text-slate-800">{t('quote.acceptOnly')}</span>
-              </button>
-              <button
-                onClick={() => declineOffer(approveOffer.offer)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl border border-red-100 hover:bg-red-50 transition text-start"
-              >
-                <X className="w-5 h-5 text-red-500 shrink-0" />
-                <span className="text-sm font-semibold text-red-700">{t('quote.decline')}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {viewOffer && <PrintableQuotation quote={viewOffer} onClose={() => setViewOffer(null)} />}
-
-    {/* ── Price offer / installation for an existing customer ── */}
-    {offerFor && (
-      <QuotationModal
-        customerId={offerFor.id}
-        customerName={offerFor.name}
-        customerPhone={offerFor.phone}
-        customerEmail={offerFor.email || undefined}
-        customerAddress={offerFor.address}
-        onClose={() => setOfferFor(null)}
-        onSaved={() => loadData()}
-        onConvert={(quotationId, devices) => {
-          setConvertFrom({ quotationId, devices });
-          setInstallFor(offerFor);
-          setOfferFor(null);
-        }}
-      />
-    )}
-
-    {installFor && (
-      <NewInstallationModal
-        customerId={installFor.id}
-        customerName={installFor.name}
-        presetDevices={convertFrom?.devices}
-        quotationId={convertFrom?.quotationId ?? null}
-        onClose={() => { setInstallFor(null); setConvertFrom(null); }}
-        onSaved={() => {
-          setInstallFor(null);
-          setConvertFrom(null);
-          loadData();
-          loadAppointments(apptDateRange, customStart, customEnd);
-        }}
       />
     )}
 

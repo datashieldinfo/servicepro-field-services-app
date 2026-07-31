@@ -255,7 +255,9 @@
     "portalDesc": "Manage maintenance visit scheduling, assign RO technicians, handle customer communication, and track appointments",
     "filterAwaitingAction": "Awaiting action",
     "awaitingActionBadge": "No action yet",
-    "nextStep": "Next step"
+    "nextStep": "Next step",
+    "awaitingActionTitle": "{{count}} customers with no next step yet",
+    "emailLabel": "Email"
   },
   "technician": {
     "hey": "Hey",
@@ -555,7 +557,7 @@
     "phone": "Phone Number",
     "countryCode": "Country Code",
     "email": "Email Address",
-    "emailHint": "Optional — if provided, a portal login is created for the customer.",
+    "emailHint": "Optional — needed only if you give this customer portal access.",
     "address": "Address",
     "state": "State / Governorate",
     "statePlaceholder": "Amman",
@@ -630,7 +632,8 @@
     "duplicateTitle": "A customer with this phone already exists",
     "duplicateBody": "{{name}} — {{phone}} is already on file.",
     "duplicateHint": "Press Save again to add this record anyway, or close and search for the existing customer.",
-    "duplicateWarning": "This phone number is already registered — check before saving again"
+    "duplicateWarning": "This phone number is already registered — check before saving again",
+    "whatNextLater": "You can come back to these any time from the customer list."
   },
   "customerImport": {
     "title": "Import Customers",
@@ -972,5 +975,20 @@
     "openMap": "Map",
     "openRequests": "{{count}} service request(s) still waiting to be scheduled",
     "alreadyBooked": "Already has a visit booked for {{date}}"
+  },
+  "portal": {
+    "grantTitle": "Give portal access",
+    "grantDesc": "Create a 360 login for this customer",
+    "grantBody": "This creates a BioFamily 360 account for the customer and produces a one-time link to sign in with. They choose their own password on first use.",
+    "grantAction": "Create the account and the link",
+    "grantedToast": "Portal access created",
+    "reissueTitle": "New login link",
+    "reissueDesc": "Issue a fresh one-time link",
+    "reissueBody": "The customer already has an account. Issuing a new link also resets the temporary password, and they will be asked to choose a new one when they sign in.",
+    "reissueAction": "Issue a new link",
+    "reissuedToast": "A new login link was issued",
+    "emailHint": "The customer signs in with this address.",
+    "needEmail": "An email address is required",
+    "passwordReplaced": "This replaces the customer’s previous password. Hand over the link when you can — the password is the fallback."
   }
 }

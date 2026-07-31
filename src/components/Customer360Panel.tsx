@@ -6,6 +6,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import CustomerFullEditPage from './CustomerFullEditPage';
+import CustomerNextStep from './CustomerNextStep';
+import { fmtDate } from '../lib/format';
 
 interface Props {
   customerId: string;
@@ -60,11 +62,6 @@ interface FilterRow {
 
 interface NotificationRow {
   id: string; type: string; message: string; is_read: boolean; created_at: string;
-}
-
-function fmtDate(d: string | null) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-GB');
 }
 
 export default function Customer360Panel({ customerId, onClose }: Props) {
@@ -197,6 +194,12 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {customer && (
+              <CustomerNextStep
+                customer={customer}
+                onChanged={() => loadAll()}
+              />
+            )}
             {customer && (
               <button
                 onClick={() => setShowFullEdit(true)}

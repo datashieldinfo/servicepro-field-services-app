@@ -1,59 +1,89 @@
 import { useState } from 'react';
-import { X, Loader2, Cpu, Save } from 'lucide-react';
+import { X, Loader2, Cpu, Save, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
+import { DEVICE_BRANDS, type DeviceRecord } from '../lib/deviceFields';
 
-export interface EditableDevice {
-  id: string;
-  device_brand: string;
-  device_model: string | null;
-  serial_number: string | null;
-  installation_date: string | null;
-  warranty_expires: string | null;
-  location_in_premises: string | null;
-}
+export type EditableDevice = DeviceRecord;
 
 interface Props {
-  device: EditableDevice;
+  /** Editing an existing device; omit to register a new one. */
+  device?: DeviceRecord | null;
+  /** Customers to choose from when registering — omit when the owner is known. */
+  customers?: { id: string; name: string }[];
+  /** Pre-selected owner for a new device. */
+  customerId?: string;
   onClose: () => void;
-  onUpdated: () => void;
+  onSaved: () => void;
 }
 
-const DEVICE_BRANDS = ['BioFamily 4-Stage', 'BioFamily 7-Stage', 'Ruhens Cooler', 'Family Cooler', 'Other'];
-
-export default function EditDeviceModal({ device, onClose, onUpdated }: Props) {
+/**
+ * One form for registering a device and for editing one. They were two
+ * components with the same six fields, the same brand list and the same write —
+ * only the verb differed.
+ */
+export default function DeviceModal({
+  device = null,
+  customers,
+  customerId,
+  onClose,
+  onSaved,
+}: Props) {
   const { t, i18n } = useTranslation();
   const { showToast } = useToast();
   const isAr = i18n.language === 'ar';
 
-  const [brand, setBrand] = useState(device.device_brand ?? DEVICE_BRANDS[0]);
-  const [model, setModel] = useState(device.device_model ?? '');
-  const [serial, setSerial] = useState(device.serial_number ?? '');
-  const [installDate, setInstallDate] = useState(device.installation_date ?? '');
-  const [warrantyExpires, setWarrantyExpires] = useState(device.warranty_expires ?? '');
-  const [location, setLocation] = useState(device.location_in_premises ?? '');
+  const editing = !!device;
+
+  const [owner, setOwner] = useState(device?.customer_id ?? customerId ?? '');
+  const [brand, setBrand] = useState(device?.device_brand ?? DEVICE_BRANDS[0]);
+  const [model, setModel] = useState(device?.device_model ?? '');
+  const [serial, setSerial] = useState(device?.serial_number ?? '');
+  const [installDate, setInstallDate] = useState(device?.installation_date ?? '');
+  const [warrantyExpires, setWarrantyExpires] = useState(device?.warranty_expires ?? '');
+  const [location, setLocation] = useState(device?.location_in_premises ?? '');
   const [saving, setSaving] = useState(false);
+
+  const needsOwnerPicker = !editing && !customerId && !!customers?.length;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    if (!editing && !owner) {
+      showToast(t('toast.warning'), 'warning');
+      return;
+    }
+
     setSaving(true);
-    const { error } = await supabase.from('customer_devices').update({
+
+    const row = {
       device_brand: brand,
       device_model: model.trim() || null,
       serial_number: serial.trim() || null,
       installation_date: installDate || null,
       warranty_expires: warrantyExpires || null,
       location_in_premises: location.trim() || null,
-    }).eq('id', device.id);
+    };
+
+    const { error } = editing
+      ? await supabase.from('customer_devices').update(row).eq('id', device!.id)
+      : await supabase.from('customer_devices').insert({ ...row, customer_id: owner });
+
     setSaving(false);
 
     if (error) {
       showToast(error.message || t('toast.error'), 'error');
       return;
     }
-    showToast(isAr ? 'تم تحديث بيانات الجهاز بنجاح' : 'Device updated successfully', 'success');
-    onUpdated();
+
+    showToast(
+      editing
+        ? (isAr ? 'تم تحديث بيانات الجهاز بنجاح' : 'Device updated successfully')
+        : (isAr ? 'تمت إضافة الجهاز بنجاح' : 'Device added successfully'),
+      'success',
+    );
+    onSaved();
     onClose();
   }
 
@@ -65,7 +95,11 @@ export default function EditDeviceModal({ device, onClose, onUpdated }: Props) {
             <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center">
               <Cpu className="w-5 h-5 text-blue-600" />
             </div>
-            <h2 className="font-bold text-slate-900 text-base">{isAr ? 'تعديل بيانات الجهاز' : 'Edit Device'}</h2>
+            <h2 className="font-bold text-slate-900 text-base">
+              {editing
+                ? (isAr ? 'تعديل بيانات الجهاز' : 'Edit Device')
+                : t('manager.newDevice')}
+            </h2>
           </div>
           <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-slate-200 transition">
             <X className="w-4 h-4 text-slate-600" />
@@ -73,6 +107,20 @@ export default function EditDeviceModal({ device, onClose, onUpdated }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {needsOwnerPicker && (
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('admin.customer')}</label>
+              <select
+                value={owner}
+                onChange={e => setOwner(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white"
+              >
+                <option value="">{t('admin.selectCustomer')}</option>
+                {customers!.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('customer360.devices')}</label>
             <select value={brand} onChange={e => setBrand(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
@@ -119,7 +167,8 @@ export default function EditDeviceModal({ device, onClose, onUpdated }: Props) {
               {t('common.cancel')}
             </button>
             <button type="submit" disabled={saving} className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-semibold transition flex items-center justify-center gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" />
+                : editing ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               {t('common.save')}
             </button>
           </div>

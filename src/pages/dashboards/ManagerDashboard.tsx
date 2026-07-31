@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   Users, Calendar, Receipt, FileText, Cpu, Package, MessageSquare, UserCog,
-  Bell, ClipboardList, Search, Eye, Plus, X, Loader2, AlertTriangle, CheckCircle,
+  Bell, ClipboardList, Search, Eye, Plus, Loader2, AlertTriangle, CheckCircle,
   TrendingUp, Save, Pencil, Upload, ChevronDown, ChevronLeft, Phone,
+  Sparkles, FileSpreadsheet,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -12,11 +13,12 @@ import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
 import CustomerFullEditPage from '../../components/CustomerFullEditPage';
-import EditDeviceModal from '../../components/EditDeviceModal';
+import DeviceModal from '../../components/DeviceModal';
 import ContractModal from '../../components/ContractModal';
 import Customer360Panel from '../../components/Customer360Panel';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import ScheduleVisitModal from '../../components/ScheduleVisitModal';
+import CustomerNextStep from '../../components/CustomerNextStep';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { StatusChip, StatusDetailPanel } from '../../components/StatusDetail';
 import {
@@ -28,6 +30,10 @@ import {
   visitStatusMeta,
   waitingFor,
 } from '../../lib/statusMeta';
+import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
+import { fmtDate, whatsAppLink } from '../../lib/format';
+import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
+import { confirmAppointment, dismissServiceRequest, markInvoicePaid, setInventoryQuantity } from '../../lib/operations';
 import { TRIGGER_TO_VISIT_TYPE } from '../../lib/visitFields';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -104,12 +110,6 @@ function one<T>(v: T | T[] | null): T | null {
   return Array.isArray(v) ? v[0] ?? null : v;
 }
 
-function fmtDate(d: string | null) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-GB');
-}
-
-const DEVICE_BRANDS = ['BioFamily 4-Stage', 'BioFamily 7-Stage', 'Ruhens Cooler', 'Family Cooler', 'Other'];
 
 export default function ManagerDashboard() {
   const { profile } = useAuth();
@@ -143,6 +143,9 @@ export default function ManagerDashboard() {
   const [openMemberId, setOpenMemberId] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  /** Registered with no visit and no offer — the follow-up never happened. */
+  const [awaitingActionIds, setAwaitingActionIds] = useState<Set<string>>(new Set());
+  const [openOffers, setOpenOffers] = useState<Record<string, OpenOffer>>({});
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -213,7 +216,7 @@ export default function ManagerDashboard() {
 
   /** The second line on each card: what the headline number is made of. */
   async function loadOverviewDetail(today: string, tomorrow: string, in30: string) {
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const monthStart = startOfMonth();
 
     const [newCust, contractRows, oldestInv, lowItems, urgentReq, oldestReq, todayRows, expiring] =
       await Promise.all([
@@ -255,7 +258,7 @@ export default function ManagerDashboard() {
   async function loadWorkload() {
     const today = new Date().toISOString().split('T')[0];
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const monthStart = startOfMonth();
 
     const { data } = await supabase
       .from('appointments')
@@ -292,7 +295,12 @@ export default function ManagerDashboard() {
 
   async function loadCustomers() {
     const { data } = await supabase.from('customers').select('*').order('name');
-    setCustomers((data ?? []) as Customer[]);
+    const rows = (data ?? []) as Customer[];
+    setCustomers(rows);
+
+    const { awaiting, offers } = await loadCustomerActionState(rows);
+    setAwaitingActionIds(awaiting);
+    setOpenOffers(offers);
   }
 
   async function loadAppointments() {
@@ -310,35 +318,22 @@ export default function ManagerDashboard() {
   }
 
   async function loadInvoices() {
-    const { data } = await supabase
-      .from('invoices')
-      .select('id, invoice_number, total_amount, payment_method, payment_status, issued_at, appointment_id, labor_cost, parts_used, customers(name, address, phone), technician:profiles!invoices_technician_id_fkey(full_name), appointments(service_type, scheduled_at)')
-      .order('issued_at', { ascending: false })
-      .limit(200);
-    setInvoices(((data ?? []) as Record<string, unknown>[]).map(r => {
-      const cust = one(r.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string; address: string; phone: string } | null;
-      const tech = one(r.technician as Record<string, unknown>[] | Record<string, unknown> | null) as { full_name: string } | null;
-      const appt = one(r.appointments as Record<string, unknown>[] | Record<string, unknown> | null) as { service_type: string; scheduled_at: string } | null;
-      const parts = (Array.isArray(r.parts_used) ? r.parts_used : []) as { name: string; quantity: number; unit_price: number }[];
-      const invoiceData: InvoiceData = {
-        invoiceNumber: r.invoice_number as string,
-        issuedAt: r.issued_at as string,
-        customer: { name: cust?.name ?? '-', address: cust?.address ?? '-', phone: cust?.phone ?? '-' },
-        technicianName: tech?.full_name ?? '-',
-        serviceType: appt?.service_type ?? '-',
-        serviceDate: appt?.scheduled_at ?? r.issued_at as string,
-        parts: parts.map(p => ({ name: p.name, quantity: p.quantity, unitPrice: p.unit_price })),
-        laborCost: r.labor_cost as number ?? 0,
-        totalAmount: r.total_amount as number ?? 0,
-        paymentMethod: r.payment_method as string ?? 'cash',
-        paymentStatus: r.payment_status as string ?? 'pending',
-      };
+    const rows = await fetchInvoices({ limit: 200 });
+
+    setInvoices(rows.map(r => {
+      const { customer, technician, appointment } = invoiceEmbeds(r);
       return {
-        id: r.id as string, invoice_number: r.invoice_number as string,
-        total_amount: r.total_amount as number ?? 0, payment_method: r.payment_method as string,
-        payment_status: r.payment_status as string, issued_at: r.issued_at as string,
-        appointment_id: r.appointment_id as string | null, customers: cust, technician: tech, appointments: appt,
-        invoiceData,
+        id: r.id as string,
+        invoice_number: r.invoice_number as string,
+        total_amount: (r.total_amount as number) ?? 0,
+        payment_method: r.payment_method as string,
+        payment_status: r.payment_status as string,
+        issued_at: r.issued_at as string,
+        appointment_id: r.appointment_id as string | null,
+        customers: customer,
+        technician,
+        appointments: appointment,
+        invoiceData: toInvoiceData(r),
       };
     }));
   }
@@ -440,7 +435,7 @@ export default function ManagerDashboard() {
 
   async function handleMarkPaid(id: string) {
     setMarkingPaid(id);
-    const { error } = await supabase.from('invoices').update({ payment_status: 'paid', paid_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await markInvoicePaid(id);
     if (!error) {
       setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: 'paid', invoiceData: inv.invoiceData ? { ...inv.invoiceData, paymentStatus: 'paid' } : undefined } : inv));
       showToast(t('toast.success'), 'success');
@@ -451,7 +446,7 @@ export default function ManagerDashboard() {
   }
 
   async function handleInventoryUpdate(id: string) {
-    const { error } = await supabase.from('inventory').update({ quantity: editingInvQty }).eq('id', id);
+    const { error } = await setInventoryQuantity(id, editingInvQty);
     if (!error) {
       setInventory(prev => prev.map(i => i.id === id ? { ...i, quantity: editingInvQty } : i));
       showToast(t('toast.success'), 'success');
@@ -463,7 +458,7 @@ export default function ManagerDashboard() {
 
   async function handleDismissRequest(id: string) {
     setDismissingId(id);
-    const { error } = await supabase.from('service_requests').update({ status: 'dismissed' }).eq('id', id);
+    const { error } = await dismissServiceRequest(id);
     if (!error) {
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'dismissed' } : r));
     } else {
@@ -496,15 +491,7 @@ export default function ManagerDashboard() {
   };
 
   async function confirmVisit(id: string) {
-    const { error } = await supabase
-      .from('appointments')
-      .update({
-        confirmed: true,
-        confirmed_at: new Date().toISOString(),
-        confirmed_by: profile?.id ?? null,
-        confirmation_channel: 'phone',
-      })
-      .eq('id', id);
+    const { error } = await confirmAppointment(id, profile?.id);
 
     if (error) { showToast(error.message, 'error'); return; }
     showToast(t('visit.confirmedToast'), 'success');
@@ -688,17 +675,42 @@ export default function ManagerDashboard() {
               {filteredCustomers.length === 0 ? (
                 <p className="text-center text-slate-400 text-sm py-10">{t('common.noData')}</p>
               ) : filteredCustomers.map(c => (
-                <div key={c.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50 transition">
+                <div
+                  key={c.id}
+                  className={`flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50 transition ${
+                    awaitingActionIds.has(c.id) ? 'bg-amber-50/40' : ''
+                  }`}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-bold text-sm shrink-0">
                       {c.name[0]?.toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-slate-900 text-sm truncate">{c.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900 text-sm truncate">{c.name}</p>
+                        {awaitingActionIds.has(c.id) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap shrink-0">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            {t('admin.awaitingActionBadge')}
+                          </span>
+                        )}
+                        {openOffers[c.id] && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-purple-100 text-purple-700 whitespace-nowrap shrink-0">
+                            <FileSpreadsheet className="w-2.5 h-2.5" />
+                            {openOffers[c.id].quote_number}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500" dir="ltr">{c.phone}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    <CustomerNextStep
+                      customer={c}
+                      offer={openOffers[c.id] ?? null}
+                      highlight={awaitingActionIds.has(c.id)}
+                      onChanged={() => { loadCustomers(); loadAppointments(); }}
+                    />
                     <button
                       onClick={() => setFullEditCustomerId(c.id)}
                       title={t('common.edit')}
@@ -1268,7 +1280,7 @@ export default function ManagerDashboard() {
                               {t('requestStatus.callCustomer')}
                             </a>
                             <a
-                              href={`https://wa.me/${m.phone.replace(/\D/g, '')}`}
+                              href={whatsAppLink(m.phone)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition"
@@ -1349,10 +1361,10 @@ export default function ManagerDashboard() {
       />
     )}
     {editDevice && (
-      <EditDeviceModal
+      <DeviceModal
         device={editDevice}
         onClose={() => setEditDevice(null)}
-        onUpdated={() => { loadDevices(); }}
+        onSaved={() => { loadDevices(); }}
       />
     )}
     {contractModal && (
@@ -1400,92 +1412,13 @@ export default function ManagerDashboard() {
       <PrintableInvoice invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
     )}
     {showAddDevice && (
-      <AddDeviceModal
+      <DeviceModal
         customers={customers}
         onClose={() => setShowAddDevice(false)}
-        onCreated={() => loadDevices()}
+        onSaved={() => loadDevices()}
       />
     )}
     </>
   );
 }
 
-
-// ── Add Device Modal ────────────────────────────────────────────────────────
-
-function AddDeviceModal({ customers, onClose, onCreated }: { customers: Customer[]; onClose: () => void; onCreated: () => void }) {
-  const { t } = useTranslation();
-  const { showToast } = useToast();
-  const [customerId, setCustomerId] = useState('');
-  const [brand, setBrand] = useState(DEVICE_BRANDS[0]);
-  const [model, setModel] = useState('');
-  const [serial, setSerial] = useState('');
-  const [installDate, setInstallDate] = useState('');
-  const [warrantyExpires, setWarrantyExpires] = useState('');
-  const [location, setLocation] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!customerId) { showToast(t('toast.warning'), 'warning'); return; }
-    setSaving(true);
-    const { error } = await supabase.from('customer_devices').insert({
-      customer_id: customerId, device_brand: brand, device_model: model || null,
-      serial_number: serial || null, installation_date: installDate || null,
-      warranty_expires: warrantyExpires || null, location_in_premises: location || null,
-    });
-    setSaving(false);
-    if (error) { showToast(t('toast.error'), 'error'); return; }
-    showToast(t('toast.success'), 'success');
-    onCreated();
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-[95] flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto shadow-2xl">
-        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between">
-          <h2 className="font-bold text-slate-900 text-base">{t('manager.newDevice')}</h2>
-          <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-slate-200 transition"><X className="w-4 h-4 text-slate-600" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('admin.selectCustomer')}</label>
-            <select value={customerId} onChange={e => setCustomerId(e.target.value)} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm">
-              <option value="">{t('admin.selectCustomer')}</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('customer360.devices')}</label>
-            <select value={brand} onChange={e => setBrand(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm">
-              {DEVICE_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input value={model} onChange={e => setModel(e.target.value)} placeholder={t('manager.deviceModel')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-            <input value={serial} onChange={e => setSerial(e.target.value)} placeholder={t('manager.serialNumber')} dir="ltr" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('customer360.installDate')}</label>
-              <input type="date" value={installDate} onChange={e => setInstallDate(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('customer360.warrantyExpires')}</label>
-              <input type="date" value={warrantyExpires} onChange={e => setWarrantyExpires(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-            </div>
-          </div>
-          <input value={location} onChange={e => setLocation(e.target.value)} placeholder={t('manager.locationInPremises')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">{t('common.cancel')}</button>
-            <button type="submit" disabled={saving} className="flex-1 py-3 rounded-xl bg-navy hover:bg-navy-700 disabled:opacity-60 text-white text-sm font-semibold transition flex items-center justify-center gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {t('common.save')}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}

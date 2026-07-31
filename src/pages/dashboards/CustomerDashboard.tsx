@@ -16,6 +16,7 @@ import Navbar from '../../components/Navbar';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
+import { fmtLongDate, timeAgo } from '../../lib/format';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 
 type MobileTab = 'home' | 'appointments' | 'notifications' | 'contact';
@@ -551,12 +552,7 @@ export default function CustomerDashboard() {
   }
 
   function formatDate(iso: string | null | undefined) {
-    if (!iso) return '-';
-    try {
-      return new Date(iso).toLocaleDateString(isAr ? 'ar-SA' : 'en-US', {
-        year: 'numeric', month: 'long', day: 'numeric',
-      });
-    } catch { return iso; }
+    return fmtLongDate(iso, isAr);
   }
 
   function formatLocalDate(dateStr: string | null | undefined) {
@@ -571,15 +567,8 @@ export default function CustomerDashboard() {
   }
 
   function formatTimeAgo(dateStr: string | null | undefined) {
-    if (!dateStr) return '';
-    try {
-      const diff = Date.now() - new Date(dateStr).getTime();
-      const hours = Math.floor(diff / 3600000);
-      const days = Math.floor(diff / 86400000);
-      if (days > 0) return t('time.daysAgo', { count: days });
-      if (hours > 0) return t('time.hoursAgo', { count: hours });
-      return t('time.minutesAgo', { count: Math.max(1, Math.floor(diff / 60000)) });
-    } catch { return ''; }
+    const ago = timeAgo(dateStr);
+    return ago ? t(ago.key, { count: ago.count }) : '';
   }
 
   const getHealthColor = (percent: number) => {

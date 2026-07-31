@@ -3,6 +3,7 @@ import { Bell, Clock, Gift, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { timeAgo } from '../lib/format';
 
 interface Notification {
   id: string;
@@ -66,12 +67,8 @@ export default function NotificationDropdown() {
   }, []);
 
   function formatTimeAgo(dateStr: string) {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const days = Math.floor(diff / 86400000);
-    const hours = Math.floor(diff / 3600000);
-    if (days > 0) return t('time.daysAgo', { count: days });
-    if (hours > 0) return t('time.hoursAgo', { count: hours });
-    return t('time.minutesAgo', { count: Math.max(1, Math.floor(diff / 60000)) });
+    const ago = timeAgo(dateStr);
+    return ago ? t(ago.key, { count: ago.count }) : '';
   }
 
   async function markOneRead(id: string) {

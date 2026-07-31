@@ -180,6 +180,25 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
 - Always use `useTranslation()` and `t('key')` for UI strings. Never hardcode Arabic or English text in JSX.
 - Use Tailwind's logical properties (`start`, `end`, `ps-*`, `pe-*`, `ms-*`, `me-*`) instead of `left`/`right` so RTL layout is automatic.
 
+### Shared libraries
+
+One definition each — these were previously copied between dashboards and drifted apart.
+
+- **`src/lib/format.ts`** — `fmtDate` / `fmtDateTime` / `fmtLongDate` / `fmtTime`, `timeAgo` (returns
+  the i18n key + count so the caller renders it), `phoneDigits`, `whatsAppLink`, `shareOnWhatsApp`,
+  `mailtoLink`, `downloadCsv`.
+- **`src/lib/operations.ts`** — the writes more than one dashboard makes: `setInventoryQuantity`,
+  `markInvoicePaid`, `dismissServiceRequest`, `confirmAppointment`. Each returns Supabase's
+  `{ error }` so the caller keeps its own toast and local state update.
+- **`src/lib/invoiceRows.ts`** — `INVOICE_SELECT`, `fetchInvoices`, `invoiceEmbeds`, `toInvoiceData`,
+  `one()` (flattens a PostgREST embed), `startOfMonth`.
+- **`src/lib/customerActionState.ts`** — which customers have no visit and no offer, and each one's
+  open offer.
+- **`src/lib/deviceFields.ts`** — `DEVICE_BRANDS`, `WARRANTY_MONTHS`, `DeviceRecord`.
+- **`src/lib/language.ts`** — `toggleLanguage()`.
+- **`src/lib/portalAccess.ts`** — `issuePortalAccess()`; grants 360 access or re-issues a lost
+  one-time login link via the `create-user` edge function's `invite` mode.
+
 ### Styling conventions
 
 - Tailwind CSS 3 with custom colors: `navy` (#1E3A8A), `gold` (#F59E0B) — see `tailwind.config.js`.
@@ -193,9 +212,11 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
 - `NotificationDropdown` — hardcoded demo data, not DB-connected.
 - `ProtectedRoute` — redirects to `/login` if unauthenticated or wrong role.
 - `Toast` / `useToast` — `showToast(message, 'success' | 'error' | 'warning')`.
-- `LoadingSkeleton` — animated placeholder.
 - `Logo` — custom SVG shield with wrench/gear.
 - `PrintableInvoice` — bilingual printable invoice overlay (print + WhatsApp share).
+- `CustomerNextStep` — the post-registration "what's next?" actions (offer / installation / visit /
+  offer decision / offer print / portal access), as a row dropdown or a card list.
+- `DeviceModal` — one form for registering and editing a `customer_devices` row.
 - `ErrorBoundary` — wraps the app for unhandled render errors.
 
 ### ReportsPage
@@ -225,7 +246,6 @@ Accessible from `OwnerDashboard`. DB-connected: queries `appointments` (status=c
 - **Photo upload** — UI present in `TechnicianDashboard` job detail modal with an `AlertTriangle` warning; Supabase Storage buckets not configured.
 - **Navbar search** — input rendered but has no filtering logic; AdminDashboard appointment/customer search inputs are wired.
 - **Technician "Settings" tab** — renders only an icon and label, no content.
-- **`TechnicianDashboard-1.tsx`** — duplicate/unused file; the active file is `TechnicianDashboard.tsx`.
 - **Real-time subscriptions** — not implemented; dashboards fetch on mount only.
 - **Revenue chart** (`OwnerDashboard`) — hardcoded static array; `ReportsPage` is now DB-connected.
 - **WhatsApp number** — hardcoded to `0778068705` in `PrintableInvoice.tsx`; should be configurable. Emergency WhatsApp link in `CustomerDashboard` hardcoded to `+962791234567`.

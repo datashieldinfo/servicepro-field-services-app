@@ -14,17 +14,8 @@ import {
   emptyVisitForm,
   type ConfirmationChannel,
 } from '../lib/visitFields';
+import { DEVICE_BRANDS, WARRANTY_MONTHS } from '../lib/deviceFields';
 
-export const DEVICE_BRANDS = [
-  'BioFamily 4-Stage',
-  'BioFamily 7-Stage',
-  'Ruhens Cooler',
-  'Family Cooler',
-  'Other',
-];
-
-/** Warranty options offered at install time, in months. */
-const WARRANTY_MONTHS = [12, 24, 36];
 
 interface DeviceDraft {
   key: string;

@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useTranslation } from 'react-i18next';
 import Navbar from '../components/Navbar';
 import { supabase } from '../lib/supabase';
+import { downloadCsv } from '../lib/format';
 
 interface TechnicianRow {
   name: string;
@@ -79,16 +80,11 @@ export default function ReportsPage() {
   }));
 
   function exportCsv() {
-    const headers = [t('reports.techName'), t('reports.completedJobs'), t('reports.tasksDone'), t('reports.partsUsed')];
-    const rows = techData.map(row => [row.name, row.jobs, row.tasksDone, row.partsUsed].join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'servisgo-report.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(
+      'servisgo-report.csv',
+      [t('reports.techName'), t('reports.completedJobs'), t('reports.tasksDone'), t('reports.partsUsed')],
+      techData.map(row => [row.name, row.jobs, row.tasksDone, row.partsUsed]),
+    );
   }
 
   return (

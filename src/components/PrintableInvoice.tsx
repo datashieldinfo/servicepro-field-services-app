@@ -43,10 +43,6 @@ export default function PrintableInvoice({ invoice, onClose }: Props) {
     day: '2-digit', month: '2-digit', year: 'numeric',
   });
 
-  function handlePrint() {
-    window.print();
-  }
-
   const whatsappText = encodeURIComponent(
     `فاتورة رقم ${invoice.invoiceNumber}\nالعميل: ${invoice.customer.name}\nالإجمالي: ${invoice.totalAmount.toFixed(2)} JOD\nالحالة: ${isPaid ? 'مدفوعة ✓' : 'معلقة'}`
   );
@@ -76,7 +72,7 @@ export default function PrintableInvoice({ invoice, onClose }: Props) {
           <div className="no-print flex items-center justify-between bg-slate-800 px-5 py-3">
             <div className="flex items-center gap-2">
               <button
-                onClick={handlePrint}
+                onClick={() => window.print()}
                 className="flex items-center gap-2 bg-white text-slate-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-100 transition"
               >
                 <Printer className="w-4 h-4" />

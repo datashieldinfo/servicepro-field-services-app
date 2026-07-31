@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Zap, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { toggleLanguage } from '../lib/language';
 import { supabase, UserRole } from '../lib/supabase';
 import Logo from '../components/Logo';
 
@@ -166,10 +167,6 @@ export default function LoginPage() {
     }
 
     setDemoLoading(null);
-  }
-
-  function toggleLanguage() {
-    i18n.changeLanguage(isAr ? 'en' : 'ar');
   }
 
   return (
