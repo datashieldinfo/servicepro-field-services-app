@@ -59,7 +59,138 @@ Deno.serve(async (req) => {
     const {
       type, email, password, full_name, phone, address, customer,
       redirect_to, must_change_password = true,
+      mode = 'create', customer_id,
     } = await req.json();
+
+    /** A one-time magic link, or null when Supabase refused to mint one. */
+    const makeLink = async (forEmail: string): Promise<string | null> => {
+      const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: forEmail,
+        options: redirect_to ? { redirectTo: redirect_to } : undefined,
+      });
+      if (error) {
+        console.error('Failed to generate login link:', error.message);
+        return null;
+      }
+      return data?.properties?.action_link ?? null;
+    };
+
+    /*
+      Invite mode — the customer record already exists. Either the office is
+      granting portal access for the first time, or the one-time link shown at
+      registration was lost and a fresh one is needed. Nothing is inserted into
+      `customers` here; the existing row is updated.
+    */
+    if (mode === 'invite') {
+      if (!customer_id) {
+        return new Response(JSON.stringify({ error: 'customer_id is required for invite mode' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: existingCustomer, error: lookupError } = await supabaseAdmin
+        .from('customers')
+        .select('id, name, email, phone, user_id')
+        .eq('id', customer_id)
+        .maybeSingle();
+
+      if (lookupError || !existingCustomer) {
+        return new Response(JSON.stringify({ error: lookupError?.message ?? 'Customer not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const targetEmail = (email ?? existingCustomer.email ?? '').trim();
+      if (!targetEmail) {
+        return new Response(JSON.stringify({ error: 'This customer has no email address' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const invitePassword = password ?? Array.from(
+        crypto.getRandomValues(new Uint32Array(14)),
+        (n) => 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%'[n % 60],
+      ).join('');
+
+      // Already has a login → reset the password and mint a fresh link.
+      if (existingCustomer.user_id) {
+        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+          existingCustomer.user_id,
+          {
+            password: invitePassword,
+            user_metadata: { must_change_password },
+          },
+        );
+
+        if (updateError) {
+          return new Response(JSON.stringify({ error: updateError.message }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        await supabaseAdmin.from('profiles')
+          .update({ must_change_password })
+          .eq('id', existingCustomer.user_id);
+        await supabaseAdmin.from('customers')
+          .update({ portal_access: true })
+          .eq('id', customer_id);
+
+        return new Response(
+          JSON.stringify({
+            user: { id: existingCustomer.user_id, email: targetEmail },
+            login_link: await makeLink(targetEmail),
+            created: false,
+            email: targetEmail,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // No login yet → create the account and attach it to this record.
+      const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.createUser({
+        email: targetEmail,
+        password: invitePassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: full_name ?? existingCustomer.name,
+          role: 'customer',
+          must_change_password,
+        },
+      });
+
+      if (inviteError || !invited.user) {
+        return new Response(JSON.stringify({ error: inviteError?.message ?? 'Failed to create auth user' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const invitedId = invited.user.id;
+      const invitedProfile: Record<string, unknown> = { must_change_password };
+      if (existingCustomer.phone) invitedProfile.phone = existingCustomer.phone;
+      await supabaseAdmin.from('profiles').update(invitedProfile).eq('id', invitedId);
+
+      const { error: linkError } = await supabaseAdmin.from('customers')
+        .update({ user_id: invitedId, email: targetEmail, portal_access: true })
+        .eq('id', customer_id);
+
+      if (linkError) console.error('Failed to link customer to account:', linkError.message);
+
+      return new Response(
+        JSON.stringify({
+          user: { id: invitedId, email: targetEmail },
+          login_link: await makeLink(targetEmail),
+          created: true,
+          email: targetEmail,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!type || !email || !full_name) {
       return new Response(JSON.stringify({ error: 'Missing required fields: type, email, full_name' }), {
@@ -102,18 +233,7 @@ Deno.serve(async (req) => {
       password out loud; `must_change_password` then forces them to choose
       their own before they reach the dashboard.
     */
-    let actionLink: string | null = null;
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
-      options: redirect_to ? { redirectTo: redirect_to } : undefined,
-    });
-
-    if (linkError) {
-      console.error('Failed to generate login link:', linkError.message);
-    } else {
-      actionLink = linkData?.properties?.action_link ?? null;
-    }
+    const actionLink = await makeLink(email);
 
     // For customer type, also insert the customers table row.
     // `customer` carries the structured record (type, address parts, map pin,

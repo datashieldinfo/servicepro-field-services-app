@@ -6,6 +6,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import CustomerFullEditPage from './CustomerFullEditPage';
+import CustomerNextStep from './CustomerNextStep';
 
 interface Props {
   customerId: string;
@@ -197,6 +198,12 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {customer && (
+              <CustomerNextStep
+                customer={customer}
+                onChanged={() => loadAll()}
+              />
+            )}
             {customer && (
               <button
                 onClick={() => setShowFullEdit(true)}

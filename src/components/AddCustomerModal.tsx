@@ -1,15 +1,14 @@
 import { useState } from 'react';
 import {
-  X, Loader2, User, CheckCircle, Building2, Upload, Copy, Check, CalendarPlus,
-  Link as LinkIcon, MessageCircle, Mail, FileSpreadsheet, PackagePlus, AlertTriangle,
+  X, Loader2, User, CheckCircle, Building2, Upload, Copy, Check,
+  Link as LinkIcon, MessageCircle, Mail, AlertTriangle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from './Toast';
 import CustomerFields from './CustomerFields';
-import ScheduleVisitModal from './ScheduleVisitModal';
-import NewInstallationModal from './NewInstallationModal';
-import QuotationModal from './QuotationModal';
+import CustomerNextStep from './CustomerNextStep';
 import {
+  composeAddress,
   customerDisplayName,
   emptyCustomerForm,
   validateCustomer,
@@ -37,11 +36,7 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
     { tempPassword?: string; loginLink?: string; hasLogin: boolean; customerId?: string } | null
   >(null);
   const [copied, setCopied] = useState<'password' | 'link' | null>(null);
-  const [nextStep, setNextStep] = useState<'offer' | 'installation' | 'visit' | null>(null);
   const [duplicate, setDuplicate] = useState<{ id: string; name: string; phone: string } | null>(null);
-  const [convertFrom, setConvertFrom] = useState<
-    { quotationId: string; devices: { device_brand: string; catalog_id: string }[] } | null
-  >(null);
 
   const corporate = form.customer_type === 'corporate';
 
@@ -252,41 +247,23 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
               <div className="w-full max-w-md border-t border-slate-100 pt-4 space-y-2 text-start">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('customerForm.whatNext')}</p>
 
-                <button
-                  type="button"
-                  onClick={() => setNextStep('offer')}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-purple-200 bg-purple-50 hover:border-purple-400 transition text-start"
-                >
-                  <FileSpreadsheet className="w-5 h-5 text-purple-600 shrink-0" />
-                  <span>
-                    <span className="block text-sm font-semibold text-purple-900">{t('customerForm.sendOffer')}</span>
-                    <span className="block text-[11px] text-purple-700">{t('customerForm.sendOfferDesc')}</span>
-                  </span>
-                </button>
+                <CustomerNextStep
+                  variant="panel"
+                  customer={{
+                    id: done.customerId,
+                    name: customerDisplayName(form),
+                    phone: `${form.country_code}${form.phone}`,
+                    email: form.email.trim() || null,
+                    address: composeAddress(form, isAr) || null,
+                    user_id: done.hasLogin ? 'pending' : null,
+                  }}
+                  offer={null}
+                  showPortalAccess={false}
+                  onChanged={onCreated}
+                  onFinished={onClose}
+                />
 
-                <button
-                  type="button"
-                  onClick={() => setNextStep('installation')}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:border-blue-400 transition text-start"
-                >
-                  <PackagePlus className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span>
-                    <span className="block text-sm font-semibold text-blue-900">{t('customerForm.newInstallation')}</span>
-                    <span className="block text-[11px] text-blue-700">{t('customerForm.newInstallationDesc')}</span>
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setNextStep('visit')}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-orange-200 bg-orange-50 hover:border-orange-400 transition text-start"
-                >
-                  <CalendarPlus className="w-5 h-5 text-orange-600 shrink-0" />
-                  <span>
-                    <span className="block text-sm font-semibold text-orange-900">{t('customerForm.scheduleVisit')}</span>
-                    <span className="block text-[11px] text-orange-700">{t('customerForm.scheduleVisitDesc')}</span>
-                  </span>
-                </button>
+                <p className="text-[11px] text-slate-400 pt-1">{t('customerForm.whatNextLater')}</p>
               </div>
             )}
 
@@ -360,41 +337,6 @@ export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: P
           </form>
         )}
       </div>
-
-      {nextStep === 'offer' && done?.customerId && (
-        <QuotationModal
-          customerId={done.customerId}
-          customerName={customerDisplayName(form)}
-          customerPhone={`${form.country_code}${form.phone}`}
-          customerEmail={form.email.trim() || undefined}
-          onClose={() => setNextStep(null)}
-          onSaved={() => onCreated()}
-          onConvert={(quotationId, devices) => {
-            setConvertFrom({ quotationId, devices });
-            setNextStep('installation');
-          }}
-        />
-      )}
-
-      {nextStep === 'installation' && done?.customerId && (
-        <NewInstallationModal
-          customerId={done.customerId}
-          customerName={customerDisplayName(form)}
-          presetDevices={convertFrom?.devices}
-          quotationId={convertFrom?.quotationId ?? null}
-          onClose={() => { setNextStep(null); setConvertFrom(null); }}
-          onSaved={() => { setNextStep(null); setConvertFrom(null); onCreated(); onClose(); }}
-        />
-      )}
-
-      {nextStep === 'visit' && done?.customerId && (
-        <ScheduleVisitModal
-          presetCustomerId={done.customerId}
-          presetCustomerName={customerDisplayName(form)}
-          onClose={() => setNextStep(null)}
-          onSaved={() => { setNextStep(null); onCreated(); onClose(); }}
-        />
-      )}
 
     </div>
   );

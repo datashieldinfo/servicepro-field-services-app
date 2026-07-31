@@ -3,6 +3,7 @@ import {
   Users, Calendar, Receipt, FileText, Cpu, Package, MessageSquare, UserCog,
   Bell, ClipboardList, Search, Eye, Plus, X, Loader2, AlertTriangle, CheckCircle,
   TrendingUp, Save, Pencil, Upload, ChevronDown, ChevronLeft, Phone,
+  Sparkles, FileSpreadsheet,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -17,6 +18,7 @@ import ContractModal from '../../components/ContractModal';
 import Customer360Panel from '../../components/Customer360Panel';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import ScheduleVisitModal from '../../components/ScheduleVisitModal';
+import CustomerNextStep from '../../components/CustomerNextStep';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { StatusChip, StatusDetailPanel } from '../../components/StatusDetail';
 import {
@@ -28,6 +30,7 @@ import {
   visitStatusMeta,
   waitingFor,
 } from '../../lib/statusMeta';
+import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
 import { TRIGGER_TO_VISIT_TYPE } from '../../lib/visitFields';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -143,6 +146,9 @@ export default function ManagerDashboard() {
   const [openMemberId, setOpenMemberId] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  /** Registered with no visit and no offer — the follow-up never happened. */
+  const [awaitingActionIds, setAwaitingActionIds] = useState<Set<string>>(new Set());
+  const [openOffers, setOpenOffers] = useState<Record<string, OpenOffer>>({});
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -292,7 +298,12 @@ export default function ManagerDashboard() {
 
   async function loadCustomers() {
     const { data } = await supabase.from('customers').select('*').order('name');
-    setCustomers((data ?? []) as Customer[]);
+    const rows = (data ?? []) as Customer[];
+    setCustomers(rows);
+
+    const { awaiting, offers } = await loadCustomerActionState(rows);
+    setAwaitingActionIds(awaiting);
+    setOpenOffers(offers);
   }
 
   async function loadAppointments() {
@@ -688,17 +699,42 @@ export default function ManagerDashboard() {
               {filteredCustomers.length === 0 ? (
                 <p className="text-center text-slate-400 text-sm py-10">{t('common.noData')}</p>
               ) : filteredCustomers.map(c => (
-                <div key={c.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50 transition">
+                <div
+                  key={c.id}
+                  className={`flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50 transition ${
+                    awaitingActionIds.has(c.id) ? 'bg-amber-50/40' : ''
+                  }`}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-bold text-sm shrink-0">
                       {c.name[0]?.toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-slate-900 text-sm truncate">{c.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900 text-sm truncate">{c.name}</p>
+                        {awaitingActionIds.has(c.id) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap shrink-0">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            {t('admin.awaitingActionBadge')}
+                          </span>
+                        )}
+                        {openOffers[c.id] && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-purple-100 text-purple-700 whitespace-nowrap shrink-0">
+                            <FileSpreadsheet className="w-2.5 h-2.5" />
+                            {openOffers[c.id].quote_number}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500" dir="ltr">{c.phone}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    <CustomerNextStep
+                      customer={c}
+                      offer={openOffers[c.id] ?? null}
+                      highlight={awaitingActionIds.has(c.id)}
+                      onChanged={() => { loadCustomers(); loadAppointments(); }}
+                    />
                     <button
                       onClick={() => setFullEditCustomerId(c.id)}
                       title={t('common.edit')}

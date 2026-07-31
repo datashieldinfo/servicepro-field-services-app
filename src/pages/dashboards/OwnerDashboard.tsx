@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, CalendarCheck, MapPin, UserCog, ArrowUpRight, Activity, Send, UserPlus, FileBarChart, Clock, Database, Zap, AlertOctagon, Timer, Receipt, TrendingUp, CreditCard, Download, Package, AlertTriangle, Calendar, X, Phone, MessageCircle, CheckCircle, Wrench, Upload } from 'lucide-react';
+import { Users, CalendarCheck, MapPin, UserCog, ArrowUpRight, Activity, Send, UserPlus, FileBarChart, Clock, Database, Zap, AlertOctagon, Timer, Receipt, TrendingUp, CreditCard, Download, Package, AlertTriangle, Calendar, X, Phone, MessageCircle, CheckCircle, Wrench, Upload, Sparkles } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,8 @@ import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
+import CustomerNextStep, { type NextStepCustomer } from '../../components/CustomerNextStep';
+import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { VISIT_TYPES, visitTypeDef } from '../../lib/visitFields';
@@ -58,6 +60,9 @@ export default function OwnerDashboard() {
   const [showImportCustomers, setShowImportCustomers] = useState(false);
 
   const [customerCount, setCustomerCount] = useState(0);
+  /** Registered with no visit and no offer — the follow-up never happened. */
+  const [awaitingCustomers, setAwaitingCustomers] = useState<NextStepCustomer[]>([]);
+  const [openOffers, setOpenOffers] = useState<Record<string, OpenOffer>>({});
   const [visitMix, setVisitMix] = useState<{ type: string; count: number }[]>([]);
   const [unconfirmedCount, setUnconfirmedCount] = useState(0);
   const [technicianCount, setTechnicianCount] = useState(0);
@@ -100,6 +105,19 @@ export default function OwnerDashboard() {
   interface OwnerApptModalState { appt: OwnerAppt; rescheduleDate: string; reassignTechId: string; submitting: boolean; }
   const [ownerApptModal, setOwnerApptModal]     = useState<OwnerApptModalState | null>(null);
 
+  /** Customers the office registered and then left without a next step. */
+  async function loadAwaitingCustomers() {
+    const { data } = await supabase
+      .from('customers')
+      .select('id, name, phone, email, address, user_id')
+      .order('created_at', { ascending: false });
+
+    const rows = (data ?? []) as NextStepCustomer[];
+    const { awaiting, offers } = await loadCustomerActionState(rows);
+    setAwaitingCustomers(rows.filter(c => awaiting.has(c.id) || offers[c.id]));
+    setOpenOffers(offers);
+  }
+
   async function loadData() {
     const today = new Date().toISOString().split('T')[0];
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
@@ -119,6 +137,8 @@ export default function OwnerDashboard() {
         .gte('scheduled_at', today)
         .lt('scheduled_at', tomorrow),
     ]);
+
+    await loadAwaitingCustomers();
 
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
     const [mixRes, unconfirmedRes] = await Promise.all([
@@ -347,6 +367,41 @@ export default function OwnerDashboard() {
             </div>
           </div>
         </div>
+
+        {/* ── Customers registered with nothing booked yet ── */}
+        {awaitingCustomers.length > 0 && (
+          <div className="mb-6 bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
+            <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+              <p className="text-sm font-semibold text-amber-900">
+                {t('admin.awaitingActionTitle', { count: awaitingCustomers.length })}
+              </p>
+            </div>
+            <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+              {awaitingCustomers.slice(0, 8).map(c => (
+                <div key={c.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-slate-900 text-sm truncate">{c.name}</p>
+                      {openOffers[c.id] && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-purple-100 text-purple-700 whitespace-nowrap shrink-0">
+                          {openOffers[c.id].quote_number}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500" dir="ltr">{c.phone}</p>
+                  </div>
+                  <CustomerNextStep
+                    customer={c}
+                    offer={openOffers[c.id] ?? null}
+                    highlight
+                    onChanged={() => loadAwaitingCustomers()}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Low Stock Banner ── */}
         {inventory.filter(i => i.quantity < 5).length > 0 && (
