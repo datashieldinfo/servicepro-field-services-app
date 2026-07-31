@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Users, Calendar, Receipt, FileText, Cpu, Package, MessageSquare, UserCog,
   Bell, ClipboardList, Search, Eye, Plus, X, Loader2, AlertTriangle, CheckCircle,
-  TrendingUp, Save, Pencil, Upload, ChevronDown, Phone,
+  TrendingUp, Save, Pencil, Upload, ChevronDown, ChevronLeft, Phone,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -125,6 +125,22 @@ export default function ManagerDashboard() {
     customers: 0, activeContracts: 0, pendingInvoices: 0, pendingInvoicesAmount: 0,
     lowStock: 0, pendingRequests: 0, todayAppts: 0, expiringContracts: 0,
   });
+  /** The line under each headline number — what it is actually made of. */
+  const [overviewDetail, setOverviewDetail] = useState({
+    customersNew: 0,
+    contractVisitsLeft: 0,
+    invoicesOldestDays: 0,
+    lowStockNames: '',
+    requestsHigh: 0,
+    requestsLongestWait: 0,
+    todayUnconfirmed: 0,
+    expiringName: '',
+  });
+  const [workload, setWorkload] = useState<Record<string, {
+    today: number; inProgress: number; completedMonth: number; unconfirmed: number;
+    nextVisit: { at: string; customer: string } | null;
+  }>>({});
+  const [openMemberId, setOpenMemberId] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
@@ -191,6 +207,87 @@ export default function ManagerDashboard() {
       todayAppts: todayApptCount.count ?? 0,
       expiringContracts: expContracts.count ?? 0,
     });
+
+    loadOverviewDetail(today, tomorrow, in30);
+  }
+
+  /** The second line on each card: what the headline number is made of. */
+  async function loadOverviewDetail(today: string, tomorrow: string, in30: string) {
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+    const [newCust, contractRows, oldestInv, lowItems, urgentReq, oldestReq, todayRows, expiring] =
+      await Promise.all([
+        supabase.from('customers').select('id', { count: 'exact', head: true }).gte('created_at', monthStart),
+        supabase.from('contracts').select('visits_included, visits_used').eq('status', 'active'),
+        supabase.from('invoices').select('issued_at').eq('payment_status', 'pending').order('issued_at').limit(1),
+        supabase.from('inventory').select('part_name').lt('quantity', 5).limit(2),
+        supabase.from('service_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('urgency', 'high'),
+        supabase.from('service_requests').select('created_at').eq('status', 'pending').order('created_at').limit(1),
+        supabase.from('appointments').select('confirmed').gte('scheduled_at', today).lt('scheduled_at', tomorrow),
+        supabase.from('contracts')
+          .select('end_date, customers(name)')
+          .eq('status', 'active').lte('end_date', in30).gte('end_date', today)
+          .order('end_date').limit(1),
+      ]);
+
+    const visitsLeft = ((contractRows.data ?? []) as { visits_included: number; visits_used: number }[])
+      .reduce((sum, c) => sum + Math.max(0, (c.visits_included ?? 0) - (c.visits_used ?? 0)), 0);
+
+    const days = (iso?: string) =>
+      iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)) : 0;
+
+    const expRow = (expiring.data ?? [])[0] as { end_date: string; customers: unknown } | undefined;
+    const expCust = one(expRow?.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string } | null;
+
+    setOverviewDetail({
+      customersNew: newCust.count ?? 0,
+      contractVisitsLeft: visitsLeft,
+      invoicesOldestDays: days((oldestInv.data ?? [])[0]?.issued_at),
+      lowStockNames: ((lowItems.data ?? []) as { part_name: string }[]).map(i => i.part_name).join('، '),
+      requestsHigh: urgentReq.count ?? 0,
+      requestsLongestWait: days((oldestReq.data ?? [])[0]?.created_at),
+      todayUnconfirmed: ((todayRows.data ?? []) as { confirmed: boolean }[]).filter(a => !a.confirmed).length,
+      expiringName: expRow ? `${expCust?.name ?? ''} · ${fmtDate(expRow.end_date)}` : '',
+    });
+  }
+
+  /** What each technician is actually carrying right now. */
+  async function loadWorkload() {
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+    const { data } = await supabase
+      .from('appointments')
+      .select('technician_id, status, confirmed, scheduled_at, customers(name)')
+      .not('technician_id', 'is', null)
+      .gte('scheduled_at', monthStart)
+      .order('scheduled_at');
+
+    const map: Record<string, {
+      today: number; inProgress: number; completedMonth: number; unconfirmed: number;
+      nextVisit: { at: string; customer: string } | null;
+    }> = {};
+
+    ((data ?? []) as Record<string, unknown>[]).forEach(row => {
+      const id = row.technician_id as string;
+      const at = row.scheduled_at as string;
+      const status = row.status as string;
+      const cust = one(row.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string } | null;
+
+      map[id] ??= { today: 0, inProgress: 0, completedMonth: 0, unconfirmed: 0, nextVisit: null };
+      const entry = map[id];
+
+      if (at >= today && at < tomorrow) entry.today += 1;
+      if (status === 'in_progress') entry.inProgress += 1;
+      if (status === 'completed') entry.completedMonth += 1;
+      if (!row.confirmed && status !== 'completed' && status !== 'cancelled') entry.unconfirmed += 1;
+      if (!entry.nextVisit && at >= new Date().toISOString() && status !== 'completed' && status !== 'cancelled') {
+        entry.nextVisit = { at, customer: cust?.name ?? '—' };
+      }
+    });
+
+    setWorkload(map);
   }
 
   async function loadCustomers() {
@@ -291,6 +388,7 @@ export default function ManagerDashboard() {
       .in('role', ['technician', 'admin', 'manager', 'owner'])
       .order('role');
     setTeam((data ?? []) as TeamMember[]);
+    loadWorkload();
   }
 
   async function loadNotifications() {
@@ -313,6 +411,8 @@ export default function ManagerDashboard() {
     })));
   }
 
+  // Runs once on mount; the loaders are stable for the life of the screen.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadOverview(); loadCustomers(); }, []);
 
   useEffect(() => {
@@ -483,25 +583,88 @@ export default function ManagerDashboard() {
 
         {/* ── OVERVIEW ── */}
         {tab === 'overview' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: t('manager.kpiCustomers'), value: stats.customers, color: 'text-blue-600', icon: Users },
-              { label: t('manager.kpiActiveContracts'), value: stats.activeContracts, color: 'text-green-600', icon: FileText },
-              { label: t('manager.kpiPendingInvoices'), value: `${stats.pendingInvoices} (${stats.pendingInvoicesAmount.toFixed(0)} ${t('invoice.jod')})`, color: 'text-amber-600', icon: Receipt },
-              { label: t('manager.kpiLowStock'), value: stats.lowStock, color: 'text-red-600', icon: Package },
-              { label: t('manager.kpiPendingRequests'), value: stats.pendingRequests, color: 'text-purple-600', icon: MessageSquare },
-              { label: t('manager.kpiTodayAppts'), value: stats.todayAppts, color: 'text-orange-600', icon: Calendar },
-              { label: t('manager.kpiExpiringContracts'), value: stats.expiringContracts, color: 'text-rose-600', icon: AlertTriangle },
-            ].map(s => {
-              const Icon = s.icon;
+              {
+                key: 'customers',
+                label: t('manager.kpiCustomers'),
+                value: String(stats.customers),
+                detail: t('manager.detailNewCustomers', { count: overviewDetail.customersNew }),
+                color: 'text-blue-600', ring: 'hover:border-blue-300', icon: Users,
+                go: () => setTab('customers'),
+              },
+              {
+                key: 'contracts',
+                label: t('manager.kpiActiveContracts'),
+                value: String(stats.activeContracts),
+                detail: t('manager.detailVisitsLeft', { count: overviewDetail.contractVisitsLeft }),
+                color: 'text-green-600', ring: 'hover:border-green-300', icon: FileText,
+                go: () => setTab('contracts'),
+              },
+              {
+                key: 'invoices',
+                label: t('manager.kpiPendingInvoices'),
+                value: `${stats.pendingInvoices} (${stats.pendingInvoicesAmount.toFixed(0)} ${t('invoice.jod')})`,
+                detail: stats.pendingInvoices > 0
+                  ? t('manager.detailOldestInvoice', { count: overviewDetail.invoicesOldestDays })
+                  : t('manager.detailAllSettled'),
+                color: 'text-amber-600', ring: 'hover:border-amber-300', icon: Receipt,
+                go: () => { setInvoiceFilter('pending'); setTab('invoices'); },
+              },
+              {
+                key: 'stock',
+                label: t('manager.kpiLowStock'),
+                value: String(stats.lowStock),
+                detail: overviewDetail.lowStockNames || t('manager.detailStockFine'),
+                color: 'text-red-600', ring: 'hover:border-red-300', icon: Package,
+                go: () => setTab('inventory'),
+              },
+              {
+                key: 'requests',
+                label: t('manager.kpiPendingRequests'),
+                value: String(stats.pendingRequests),
+                detail: overviewDetail.requestsHigh > 0
+                  ? t('manager.detailRequestsUrgent', { count: overviewDetail.requestsHigh, days: overviewDetail.requestsLongestWait })
+                  : t('manager.detailRequestsWait', { count: overviewDetail.requestsLongestWait }),
+                color: 'text-purple-600', ring: 'hover:border-purple-300', icon: MessageSquare,
+                go: () => { setRequestFilter('pending'); setTab('requests'); },
+              },
+              {
+                key: 'today',
+                label: t('manager.kpiTodayAppts'),
+                value: String(stats.todayAppts),
+                detail: overviewDetail.todayUnconfirmed > 0
+                  ? t('manager.detailTodayUnconfirmed', { count: overviewDetail.todayUnconfirmed })
+                  : t('manager.detailTodayAllConfirmed'),
+                color: 'text-orange-600', ring: 'hover:border-orange-300', icon: Calendar,
+                go: () => setTab('appointments'),
+              },
+              {
+                key: 'expiring',
+                label: t('manager.kpiExpiringContracts'),
+                value: String(stats.expiringContracts),
+                detail: overviewDetail.expiringName || t('manager.detailNoneExpiring'),
+                color: 'text-rose-600', ring: 'hover:border-rose-300', icon: AlertTriangle,
+                go: () => setTab('contracts'),
+              },
+            ].map(s2 => {
+              const Icon = s2.icon;
               return (
-                <div key={s.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Icon className={`w-4 h-4 ${s.color}`} />
-                    <span className="text-xs font-medium text-slate-500">{s.label}</span>
+                <button
+                  key={s2.key}
+                  onClick={s2.go}
+                  className={`bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-start transition hover:shadow-md ${s2.ring} group`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Icon className={`w-4 h-4 shrink-0 ${s2.color}`} />
+                      <span className="text-xs font-medium text-slate-500 truncate">{s2.label}</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 transition rtl:rotate-180 shrink-0" />
                   </div>
-                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                </div>
+                  <p className={`text-xl font-bold ${s2.color}`}>{s2.value}</p>
+                  <p className="text-[11px] text-slate-500 mt-1 truncate" title={s2.detail}>{s2.detail}</p>
+                </button>
               );
             })}
           </div>
@@ -1014,15 +1177,122 @@ export default function ManagerDashboard() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {team.length === 0 ? (
               <p className="text-center text-slate-400 text-sm py-10 col-span-full">{t('common.noData')}</p>
-            ) : team.map(m => (
-              <div key={m.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex items-center gap-3">
-                <div className="w-10 h-10 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-bold shrink-0">{m.full_name?.[0]?.toUpperCase()}</div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-sm truncate">{m.full_name}</p>
-                  <p className="text-xs text-slate-500">{t(`roles.${m.role}`)} {m.phone ? `· ${m.phone}` : ''}</p>
+            ) : team.map(m => {
+              const load = workload[m.id];
+              const isTech = m.role === 'technician';
+              const open = openMemberId === m.id;
+              const busy = (load?.inProgress ?? 0) > 0;
+              const freeToday = isTech && !busy && (load?.today ?? 0) === 0;
+
+              return (
+                <div
+                  key={m.id}
+                  className={`bg-white rounded-2xl shadow-sm border transition ${
+                    open ? 'border-navy/30 shadow-md' : 'border-slate-100'
+                  }`}
+                >
+                  <button
+                    onClick={() => setOpenMemberId(open ? null : m.id)}
+                    className="w-full p-4 flex items-center gap-3 text-start"
+                  >
+                    <div className="w-10 h-10 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-bold shrink-0">
+                      {m.full_name?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-slate-900 text-sm truncate">{m.full_name}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {t(`roles.${m.role}`)}{m.phone ? ` · ${m.phone}` : ''}
+                      </p>
+                    </div>
+                    {isTech && (
+                      <span className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap ${
+                        busy ? 'bg-blue-50 text-blue-700'
+                          : freeToday ? 'bg-slate-100 text-slate-500'
+                          : 'bg-green-50 text-green-700'
+                      }`}>
+                        {busy ? t('team.onJob') : freeToday ? t('team.freeToday') : t('team.jobsToday', { count: load?.today ?? 0 })}
+                      </span>
+                    )}
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition shrink-0 ${open ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {open && (
+                    <div className="border-t border-slate-100 px-4 py-4 space-y-4">
+                      {isTech && (
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { label: t('team.today'), value: load?.today ?? 0, tone: 'text-slate-900' },
+                            { label: t('team.inProgress'), value: load?.inProgress ?? 0, tone: 'text-blue-700' },
+                            { label: t('team.doneThisMonth'), value: load?.completedMonth ?? 0, tone: 'text-green-700' },
+                            { label: t('visit.unconfirmed'), value: load?.unconfirmed ?? 0, tone: (load?.unconfirmed ?? 0) > 0 ? 'text-amber-700' : 'text-slate-900' },
+                          ].map(stat => (
+                            <div key={stat.label} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-center">
+                              <p className={`text-lg font-bold ${stat.tone}`}>{stat.value}</p>
+                              <p className="text-[10px] text-slate-500 leading-tight">{stat.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                          <span className="text-[11px] text-slate-500">{t('team.role')}</span>
+                          <span className="text-xs font-medium text-slate-800">{t(`roles.${m.role}`)}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                          <span className="text-[11px] text-slate-500">{t('admin.phone')}</span>
+                          <span className="text-xs font-medium text-slate-800" dir="ltr">{m.phone || '—'}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                          <span className="text-[11px] text-slate-500">{t('team.joined')}</span>
+                          <span className="text-xs font-medium text-slate-800">{fmtDate(m.created_at)}</span>
+                        </div>
+                        {isTech && load?.nextVisit && (
+                          <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                            <span className="text-[11px] text-slate-500">{t('team.nextVisit')}</span>
+                            <span className="text-xs font-medium text-slate-800 text-end">
+                              {new Date(load.nextVisit.at).toLocaleString('en-GB')} · {load.nextVisit.customer}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {m.phone && (
+                          <>
+                            <a
+                              href={`tel:${m.phone}`}
+                              className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold transition"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              {t('requestStatus.callCustomer')}
+                            </a>
+                            <a
+                              href={`https://wa.me/${m.phone.replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              {t('quote.viaWhatsApp')}
+                            </a>
+                          </>
+                        )}
+                        {isTech && (
+                          <button
+                            onClick={() => { setApptSearch(m.full_name); setTab('appointments'); }}
+                            className="flex items-center gap-1.5 bg-navy hover:bg-navy/90 text-white px-3 py-2 rounded-lg text-xs font-semibold transition"
+                          >
+                            <Calendar className="w-3.5 h-3.5" />
+                            {t('team.viewVisits')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

@@ -438,7 +438,17 @@
     "planType": "Plan Type",
     "deviceModel": "Device Model",
     "serialNumber": "Serial Number",
-    "locationInPremises": "Location in Premises"
+    "locationInPremises": "Location in Premises",
+    "detailNewCustomers": "{{count}} added this month",
+    "detailVisitsLeft": "{{count}} visits still owed",
+    "detailOldestInvoice": "oldest unpaid: {{count}} days",
+    "detailAllSettled": "nothing outstanding",
+    "detailStockFine": "stock levels are fine",
+    "detailRequestsUrgent": "{{count}} urgent · longest wait {{days}}d",
+    "detailRequestsWait": "longest wait {{count}}d",
+    "detailTodayUnconfirmed": "{{count}} not confirmed with the customer",
+    "detailTodayAllConfirmed": "all confirmed",
+    "detailNoneExpiring": "none ending soon"
   },
   "customer360": {
     "title": "Customer 360",
@@ -938,5 +948,17 @@
     "daysLeft": "{{count}} days left",
     "visitsProgress": "{{used}} of {{total}} visits used",
     "remainingCount": "{{count}} left"
+  },
+  "team": {
+    "onJob": "On a job",
+    "freeToday": "Free today",
+    "jobsToday": "{{count}} today",
+    "today": "Today",
+    "inProgress": "Working",
+    "doneThisMonth": "Done",
+    "role": "Role",
+    "joined": "Joined",
+    "nextVisit": "Next visit",
+    "viewVisits": "Their visits"
   }
 }

@@ -438,7 +438,17 @@
     "planType": "نوع الباقة",
     "deviceModel": "موديل الجهاز",
     "serialNumber": "الرقم التسلسلي",
-    "locationInPremises": "الموقع داخل المنزل"
+    "locationInPremises": "الموقع داخل المنزل",
+    "detailNewCustomers": "أُضيف {{count}} هذا الشهر",
+    "detailVisitsLeft": "متبقٍ {{count}} زيارة مستحقة",
+    "detailOldestInvoice": "أقدم فاتورة غير مدفوعة: {{count}} يوم",
+    "detailAllSettled": "لا يوجد مستحقات",
+    "detailStockFine": "مستويات المخزون جيدة",
+    "detailRequestsUrgent": "{{count}} عاجل · أطول انتظار {{days}} يوم",
+    "detailRequestsWait": "أطول انتظار {{count}} يوم",
+    "detailTodayUnconfirmed": "{{count}} غير مؤكدة مع العميل",
+    "detailTodayAllConfirmed": "جميعها مؤكدة",
+    "detailNoneExpiring": "لا يوجد عقود تنتهي قريباً"
   },
   "customer360": {
     "title": "الملف الشامل للعميل",
@@ -938,5 +948,17 @@
     "daysLeft": "متبقٍ {{count}} يوم",
     "visitsProgress": "{{used}} من {{total}} زيارة مستخدمة",
     "remainingCount": "متبقٍ {{count}}"
+  },
+  "team": {
+    "onJob": "في مهمة",
+    "freeToday": "متفرغ اليوم",
+    "jobsToday": "{{count}} اليوم",
+    "today": "اليوم",
+    "inProgress": "قيد العمل",
+    "doneThisMonth": "منجزة",
+    "role": "الدور",
+    "joined": "تاريخ الانضمام",
+    "nextVisit": "الزيارة القادمة",
+    "viewVisits": "زياراته"
   }
 }
