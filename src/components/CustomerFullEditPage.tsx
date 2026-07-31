@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
 import CustomerFields from './CustomerFields';
+import { DEVICE_BRANDS } from '../lib/deviceFields';
 import {
   emptyCustomerForm,
   fromCustomerRow,
@@ -58,7 +59,6 @@ interface FilterState {
   next_due: string;
 }
 
-const DEVICE_BRANDS = ['BioFamily 4-Stage', 'BioFamily 7-Stage', 'Ruhens Cooler', 'Family Cooler', 'Other'];
 const PLAN_TYPES = ['monthly', 'quarterly', 'biannual', 'annual'];
 const CONTRACT_STATUSES = ['active', 'expired', 'cancelled', 'pending'];
 

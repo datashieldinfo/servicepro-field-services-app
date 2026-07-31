@@ -6,6 +6,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { contractHealth } from '../lib/statusMeta';
+import { fmtDate as fmt } from '../lib/format';
 
 interface CustomerRow {
   id: string;
@@ -45,12 +46,6 @@ interface Props {
   customerId: string;
   /** Bubbles the loaded record up so the parent can prefill its own fields. */
   onLoaded?: (snapshot: CustomerSnapshot) => void;
-}
-
-function fmt(date?: string | null): string {
-  if (!date) return '—';
-  const d = new Date(date);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB');
 }
 
 /**

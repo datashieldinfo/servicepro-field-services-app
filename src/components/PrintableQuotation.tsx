@@ -3,6 +3,7 @@ import { X, Printer, MessageCircle, Mail } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Logo from './Logo';
 import { quotationMessage, type QuotationItem } from '../lib/quotationFields';
+import { fmtDate } from '../lib/format';
 
 export interface QuotationData {
   quoteNumber: string;
@@ -21,12 +22,6 @@ export interface QuotationData {
 interface Props {
   quote: QuotationData;
   onClose: () => void;
-}
-
-function fmtDate(value: string): string {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 /**
@@ -53,10 +48,6 @@ export default function PrintableQuotation({ quote, onClose }: Props) {
     ),
   );
   const customerDigits = (quote.customer.phone ?? '').replace(/\D/g, '');
-
-  function handlePrint() {
-    window.print();
-  }
 
   /*
     Rendered into <body>, not into #root: the print rule below hides every
@@ -92,7 +83,7 @@ export default function PrintableQuotation({ quote, onClose }: Props) {
           <div className="no-print flex items-center justify-between bg-slate-800 px-5 py-3">
             <div className="flex items-center gap-2">
               <button
-                onClick={handlePrint}
+                onClick={() => window.print()}
                 className="flex items-center gap-2 bg-white text-slate-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-100 transition"
               >
                 <Printer className="w-4 h-4" />

@@ -10,6 +10,7 @@ import Navbar from '../../components/Navbar';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 import { supabase } from '../../lib/supabase';
+import { fmtLongDate } from '../../lib/format';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 
@@ -610,7 +611,7 @@ export default function TechnicianDashboard() {
     return new Date(iso).toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' });
   }
   function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString(isAr ? 'ar-SA' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    return fmtLongDate(iso, isAr);
   }
 
   const statusButton = (job: Job) => {

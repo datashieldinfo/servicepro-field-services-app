@@ -2,6 +2,7 @@ import { LogOut, Globe, Search } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { toggleLanguage } from '../lib/language';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../lib/supabase';
 import Logo from './Logo';
@@ -27,10 +28,6 @@ export default function Navbar() {
   async function handleSignOut() {
     await signOut();
     navigate('/login');
-  }
-
-  function toggleLanguage() {
-    i18n.changeLanguage(isAr ? 'en' : 'ar');
   }
 
   const initials = profile?.full_name

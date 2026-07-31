@@ -22,6 +22,9 @@ import CustomerNextStep from '../../components/CustomerNextStep';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { TRIGGER_TO_VISIT_TYPE, type VisitType } from '../../lib/visitFields';
 import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
+import { downloadCsv, whatsAppLink } from '../../lib/format';
+import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
+import { confirmAppointment, dismissServiceRequest, markInvoicePaid, setInventoryQuantity } from '../../lib/operations';
 
 interface VisitPreset {
   customerId?: string;
@@ -344,54 +347,28 @@ export default function AdminDashboard() {
   }, []);
 
   async function loadInvoices() {
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-    const { data } = await supabase
-      .from('invoices')
-      .select('id, invoice_number, total_amount, payment_method, payment_status, issued_at, appointment_id, parts_used, labor_cost, customer_id, technician_id, customers(name, address, phone), technician:profiles!invoices_technician_id_fkey(full_name), appointments(service_type, scheduled_at)')
-      .gte('issued_at', startOfMonth)
-      .order('issued_at', { ascending: false })
-      .limit(100);
+    const rows = await fetchInvoices({ since: startOfMonth(), limit: 100 });
 
-    if (data) {
-      type RawInv = Record<string, unknown>;
-      const rows: AdminInvoiceRow[] = (data as RawInv[]).map(inv => {
-        const cust = Array.isArray(inv.customers) ? (inv.customers as RawInv[])[0] : inv.customers as RawInv | null;
-        const tech = Array.isArray(inv.technician) ? (inv.technician as RawInv[])[0] : inv.technician as RawInv | null;
-        const appt = Array.isArray(inv.appointments) ? (inv.appointments as RawInv[])[0] : inv.appointments as RawInv | null;
-        const parts = (Array.isArray(inv.parts_used) ? inv.parts_used : []) as { name: string; quantity: number; unit_price: number }[];
-        const invoiceData: InvoiceData = {
-          invoiceNumber: inv.invoice_number as string,
-          issuedAt: inv.issued_at as string,
-          customer: { name: cust?.name as string ?? '-', address: cust?.address as string ?? '-', phone: cust?.phone as string ?? '-' },
-          technicianName: tech?.full_name as string ?? '-',
-          serviceType: appt?.service_type as string ?? '-',
-          serviceDate: appt?.scheduled_at as string ?? inv.issued_at as string,
-          parts: parts.map(p => ({ name: p.name, quantity: p.quantity, unitPrice: p.unit_price })),
-          laborCost: inv.labor_cost as number ?? 0,
-          totalAmount: inv.total_amount as number ?? 0,
-          paymentMethod: inv.payment_method as string ?? 'cash',
-          paymentStatus: inv.payment_status as string ?? 'pending',
-        };
-        return {
-          id: inv.id as string,
-          invoice_number: inv.invoice_number as string,
-          customer_name: cust?.name as string ?? '-',
-          technician_name: tech?.full_name as string ?? '-',
-          total_amount: inv.total_amount as number ?? 0,
-          payment_method: inv.payment_method as string ?? 'cash',
-          payment_status: inv.payment_status as string ?? 'pending',
-          issued_at: inv.issued_at as string,
-          appointment_id: inv.appointment_id as string | null,
-          invoiceData,
-        };
-      });
-      setAdminInvoices(rows);
-    }
+    setAdminInvoices(rows.map(inv => {
+      const { customer, technician } = invoiceEmbeds(inv);
+      return {
+        id: inv.id as string,
+        invoice_number: inv.invoice_number as string,
+        customer_name: customer?.name ?? '-',
+        technician_name: technician?.full_name ?? '-',
+        total_amount: (inv.total_amount as number) ?? 0,
+        payment_method: (inv.payment_method as string) ?? 'cash',
+        payment_status: (inv.payment_status as string) ?? 'pending',
+        issued_at: inv.issued_at as string,
+        appointment_id: inv.appointment_id as string | null,
+        invoiceData: toInvoiceData(inv),
+      };
+    }));
   }
 
   async function handleMarkPaid(id: string) {
     setMarkingPaid(id);
-    const { error } = await supabase.from('invoices').update({ payment_status: 'paid', paid_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await markInvoicePaid(id);
     if (!error) {
       setAdminInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: 'paid', invoiceData: inv.invoiceData ? { ...inv.invoiceData, paymentStatus: 'paid' } : undefined } : inv));
       showToast(t('toast.success'), 'success');
@@ -573,15 +550,7 @@ export default function AdminDashboard() {
   }, []);
 
   async function confirmVisit(appt: Appointment, channel = 'phone') {
-    const { error } = await supabase
-      .from('appointments')
-      .update({
-        confirmed: true,
-        confirmed_at: new Date().toISOString(),
-        confirmed_by: profile?.id ?? null,
-        confirmation_channel: channel,
-      })
-      .eq('id', appt.id);
+    const { error } = await confirmAppointment(appt.id, profile?.id, channel);
 
     if (error) { showToast(error.message, 'error'); return; }
 
@@ -596,7 +565,7 @@ export default function AdminDashboard() {
 
   async function handleDismissRequest(id: string) {
     setDismissingId(id);
-    const { error } = await supabase.from('service_requests').update({ status: 'dismissed' }).eq('id', id);
+    const { error } = await dismissServiceRequest(id);
     if (!error) {
       setServiceRequests(prev => prev.filter(r => r.id !== id));
     } else {
@@ -639,7 +608,7 @@ export default function AdminDashboard() {
   }
 
   async function handleInventoryUpdate(id: string) {
-    const { error } = await supabase.from('inventory').update({ quantity: editingInventoryQty }).eq('id', id);
+    const { error } = await setInventoryQuantity(id, editingInventoryQty);
     if (!error) {
       setInventory(prev => prev.map(i => i.id === id ? { ...i, quantity: editingInventoryQty } : i));
       showToast(t('toast.success'), 'success');
@@ -674,14 +643,7 @@ export default function AdminDashboard() {
     const rows = filteredCustomers.map(c => [
       c.name, c.phone, c.email, c.last_service_date ?? '', c.next_appointment ?? '',
     ]);
-    const csv = [headers, ...rows]
-      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'customers.csv'; a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv('customers.csv', headers, rows);
   }
 
   function toggleUrgencySection(urgency: string) {
@@ -1568,11 +1530,7 @@ export default function AdminDashboard() {
                     onClick={() => {
                       const headers = [t('invoice.invoiceNumber'), t('invoice.customerName'), t('invoice.technicianName'), t('invoice.amount'), t('invoice.paymentMethod'), t('invoice.paymentStatus'), 'Date'];
                       const rows = adminInvoices.map(inv => [inv.invoice_number, inv.customer_name, inv.technician_name, inv.total_amount.toFixed(2), inv.payment_method, inv.payment_status, new Date(inv.issued_at).toLocaleDateString('en-GB')]);
-                      const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-                      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a'); a.href = url; a.download = 'invoices.csv'; a.click();
-                      URL.revokeObjectURL(url);
+                      downloadCsv('invoices.csv', headers, rows);
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600 transition"
                   >
@@ -1963,7 +1921,7 @@ export default function AdminDashboard() {
                         <Phone className="w-3.5 h-3.5" />{appt.customers.phone}
                       </a>
                       <a
-                        href={`https://wa.me/${appt.customers.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Regarding your appointment: ${appt.service_type}`)}`}
+                        href={whatsAppLink(appt.customers.phone, `Regarding your appointment: ${appt.service_type}`)}
                         target="_blank" rel="noopener noreferrer"
                         className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl text-xs font-semibold transition"
                       >

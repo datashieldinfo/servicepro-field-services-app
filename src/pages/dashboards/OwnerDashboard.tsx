@@ -11,6 +11,9 @@ import PrintableInvoice, { type InvoiceData } from '../../components/PrintableIn
 import AddCustomerModal from '../../components/AddCustomerModal';
 import CustomerNextStep, { type NextStepCustomer } from '../../components/CustomerNextStep';
 import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
+import { downloadCsv, timeAgo, whatsAppLink } from '../../lib/format';
+import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
+import { setInventoryQuantity } from '../../lib/operations';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { VISIT_TYPES, visitTypeDef } from '../../lib/visitFields';
@@ -174,60 +177,38 @@ export default function OwnerDashboard() {
       }))
     );
 
-    // Load invoices for this month
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-    const { data: invoiceData } = await supabase
-      .from('invoices')
-      .select('id, invoice_number, total_amount, payment_method, payment_status, issued_at, parts_used, labor_cost, appointment_id, customer_id, technician_id, customers(name, address, phone), technician:profiles!invoices_technician_id_fkey(full_name), appointments(service_type, scheduled_at)')
-      .gte('issued_at', startOfMonth)
-      .order('issued_at', { ascending: false })
-      .limit(50);
+    const invoiceRows = await fetchInvoices({ since: startOfMonth(), limit: 50 });
 
-    if (invoiceData) {
-      type RawInv = Record<string, unknown>;
-      const rows: InvoiceRow[] = (invoiceData as RawInv[]).map(inv => {
-        const cust = Array.isArray(inv.customers) ? (inv.customers as RawInv[])[0] : inv.customers as RawInv | null;
-        const tech = Array.isArray(inv.technician) ? (inv.technician as RawInv[])[0] : inv.technician as RawInv | null;
-        const appt = Array.isArray(inv.appointments) ? (inv.appointments as RawInv[])[0] : inv.appointments as RawInv | null;
-        const parts = (Array.isArray(inv.parts_used) ? inv.parts_used : []) as { name: string; quantity: number; unit_price: number }[];
-        const invoiceData: InvoiceData = {
-          invoiceNumber: inv.invoice_number as string,
-          issuedAt: inv.issued_at as string,
-          customer: { name: cust?.name as string ?? '-', address: cust?.address as string ?? '-', phone: cust?.phone as string ?? '-' },
-          technicianName: tech?.full_name as string ?? '-',
-          serviceType: appt?.service_type as string ?? '-',
-          serviceDate: appt?.scheduled_at as string ?? inv.issued_at as string,
-          parts: parts.map(p => ({ name: p.name, quantity: p.quantity, unitPrice: p.unit_price })),
-          laborCost: inv.labor_cost as number ?? 0,
-          totalAmount: inv.total_amount as number ?? 0,
-          paymentMethod: inv.payment_method as string ?? 'cash',
-          paymentStatus: inv.payment_status as string ?? 'pending',
-        };
-        return {
-          id: inv.id as string,
-          invoice_number: inv.invoice_number as string,
-          customer_name: cust?.name as string ?? '-',
-          technician_name: tech?.full_name as string ?? '-',
-          total_amount: inv.total_amount as number ?? 0,
-          payment_method: inv.payment_method as string ?? 'cash',
-          payment_status: inv.payment_status as string ?? 'pending',
-          issued_at: inv.issued_at as string,
-          invoiceData,
-        };
-      });
-      setInvoices(rows);
-      const paid = rows.filter(r => r.payment_status === 'paid').reduce((s, r) => s + r.total_amount, 0);
-      const pending = rows.filter(r => r.payment_status !== 'paid');
-      setInvoiceRevenue(paid);
-      setInvoicePendingTotal(pending.reduce((s, r) => s + r.total_amount, 0));
-      setInvoicePendingCount(pending.length);
-    }
+    setInvoices(invoiceRows.map(inv => {
+      const { customer, technician } = invoiceEmbeds(inv);
+      return {
+        id: inv.id as string,
+        invoice_number: inv.invoice_number as string,
+        customer_name: customer?.name ?? '-',
+        technician_name: technician?.full_name ?? '-',
+        total_amount: (inv.total_amount as number) ?? 0,
+        payment_method: (inv.payment_method as string) ?? 'cash',
+        payment_status: (inv.payment_status as string) ?? 'pending',
+        issued_at: inv.issued_at as string,
+        appointment_id: inv.appointment_id as string | null,
+        invoiceData: toInvoiceData(inv),
+      };
+    }));
+
+    const paid = invoiceRows.filter(r => r.payment_status === 'paid');
+    const pending = invoiceRows.filter(r => r.payment_status !== 'paid');
+    const sum = (rows: Record<string, unknown>[]) =>
+      rows.reduce((total, r) => total + ((r.total_amount as number) ?? 0), 0);
+
+    setInvoiceRevenue(sum(paid));
+    setInvoicePendingTotal(sum(pending));
+    setInvoicePendingCount(pending.length);
 
     // Trigger insights for this month
     const { data: srData } = await supabase
       .from('service_requests')
       .select('trigger_type, urgency, created_at, resolved_at')
-      .gte('created_at', startOfMonth);
+      .gte('created_at', startOfMonth());
 
     if (srData) {
       const counts: Record<string, number> = {};
@@ -288,7 +269,7 @@ export default function OwnerDashboard() {
   }, []);
 
   async function handleInventoryUpdate(id: string) {
-    const { error } = await supabase.from('inventory').update({ quantity: editingInvQty }).eq('id', id);
+    const { error } = await setInventoryQuantity(id, editingInvQty);
     if (!error) setInventory(prev => prev.map(i => i.id === id ? { ...i, quantity: editingInvQty } : i));
     setEditingInvId(null);
   }
@@ -326,12 +307,8 @@ export default function OwnerDashboard() {
   ];
 
   function formatTimeAgo(dateStr: string) {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-    if (days > 0) return t('time.daysAgo', { count: days });
-    if (hours > 0) return t('time.hoursAgo', { count: hours });
-    return t('time.minutesAgo', { count: Math.max(1, Math.floor(diff / 60000)) });
+    const ago = timeAgo(dateStr);
+    return ago ? t(ago.key, { count: ago.count }) : '';
   }
 
   return (
@@ -928,11 +905,7 @@ export default function OwnerDashboard() {
                 onClick={() => {
                   const headers = [t('invoice.invoiceNumber'), t('invoice.customerName'), t('invoice.technicianName'), t('invoice.amount'), t('invoice.paymentMethod'), t('invoice.paymentStatus'), 'Date'];
                   const rows = invoices.map(inv => [inv.invoice_number, inv.customer_name, inv.technician_name, inv.total_amount.toFixed(2), inv.payment_method, inv.payment_status, new Date(inv.issued_at).toLocaleDateString('en-GB')]);
-                  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-                  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a'); a.href = url; a.download = 'invoices.csv'; a.click();
-                  URL.revokeObjectURL(url);
+                  downloadCsv('invoices.csv', headers, rows);
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600 transition"
               >
@@ -1075,7 +1048,7 @@ export default function OwnerDashboard() {
                       <a href={`tel:${appt.customers.phone}`} className="flex-1 flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-xl text-xs font-semibold transition">
                         <Phone className="w-3.5 h-3.5" />{appt.customers.phone}
                       </a>
-                      <a href={`https://wa.me/${appt.customers.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Regarding: ${appt.service_type}`)}`} target="_blank" rel="noopener noreferrer"
+                      <a href={whatsAppLink(appt.customers.phone, `Regarding: ${appt.service_type}`)} target="_blank" rel="noopener noreferrer"
                         className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl text-xs font-semibold transition">
                         <MessageCircle className="w-3.5 h-3.5" />{isAr ? 'واتساب' : 'WhatsApp'}
                       </a>
