@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
 import { useAuth } from '../contexts/AuthContext';
+import CustomerSummary from './CustomerSummary';
 import {
   CONFIRMATION_CHANNELS,
   VISIT_TYPES,
@@ -83,6 +84,7 @@ export default function ScheduleVisitModal({
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [technicians, setTechnicians] = useState<{ id: string; full_name: string }[]>([]);
   const [conflict, setConflict] = useState<string | null>(null);
+  const [addressTouched, setAddressTouched] = useState(false);
 
   const def = visitTypeDef(form.visit_type);
   const selectedCustomer = customers.find(c => c.id === form.customer_id);
@@ -123,11 +125,16 @@ export default function ScheduleVisitModal({
     })();
   }, [form.customer_id]);
 
+  /*
+    Choosing a customer pulls their address in. It keeps following the chosen
+    customer until the operator types an address of their own — a visit at a
+    different location is the exception, not the rule.
+  */
   useEffect(() => {
+    if (addressTouched) return;
     const customer = customers.find(c => c.id === form.customer_id);
-    if (customer && !form.address) setForm(prev => ({ ...prev, address: customer.address ?? '' }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.customer_id, customers]);
+    setForm(prev => ({ ...prev, address: customer?.address ?? '' }));
+  }, [form.customer_id, customers, addressTouched]);
 
   /* A device that no longer belongs to the chosen customer must not linger. */
   useEffect(() => {
@@ -326,6 +333,12 @@ export default function ScheduleVisitModal({
                 <AlertTriangle className="w-3 h-3" /> {errors.customer_id}
               </p>
             )}
+
+            {form.customer_id && (
+              <div className="mt-3">
+                <CustomerSummary customerId={form.customer_id} />
+              </div>
+            )}
           </div>
 
           {/* ── Device ──────────────────────────────────────────────────── */}
@@ -422,7 +435,7 @@ export default function ScheduleVisitModal({
               <MapPin className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 value={form.address}
-                onChange={e => patch({ address: e.target.value })}
+                onChange={e => { patch({ address: e.target.value }); setAddressTouched(true); }}
                 placeholder={t('visit.addressPlaceholder')}
                 className={`${inputClass('address')} ps-10`}
               />

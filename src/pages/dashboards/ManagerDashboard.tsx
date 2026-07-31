@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Users, Calendar, Receipt, FileText, Cpu, Package, MessageSquare, UserCog,
   Bell, ClipboardList, Search, Eye, Plus, X, Loader2, AlertTriangle, CheckCircle,
-  TrendingUp, Save, Pencil, Upload,
+  TrendingUp, Save, Pencil, Upload, ChevronDown, ChevronLeft, Phone,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -13,11 +13,22 @@ import PrintableInvoice, { type InvoiceData } from '../../components/PrintableIn
 import AddCustomerModal from '../../components/AddCustomerModal';
 import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import EditDeviceModal from '../../components/EditDeviceModal';
-import EditContractModal from '../../components/EditContractModal';
+import ContractModal from '../../components/ContractModal';
 import Customer360Panel from '../../components/Customer360Panel';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import ScheduleVisitModal from '../../components/ScheduleVisitModal';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
+import { StatusChip, StatusDetailPanel } from '../../components/StatusDetail';
+import {
+  TONE_CLASS,
+  URGENCY_TONE,
+  contractHealth,
+  requestStatusMeta,
+  visitBlockers,
+  visitStatusMeta,
+  waitingFor,
+} from '../../lib/statusMeta';
+import { TRIGGER_TO_VISIT_TYPE } from '../../lib/visitFields';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,9 +44,14 @@ interface Customer {
 
 interface ApptRow {
   id: string; service_type: string; visit_type: string; confirmed: boolean;
-  scheduled_at: string; status: string;
-  customers: { name: string } | null;
+  confirmed_at: string | null; confirmation_channel: string | null;
+  scheduled_at: string; status: string; address: string; notes: string;
+  approval_notes: string | null; technician_id: string | null;
+  tds_before: number | null; tds_after: number | null;
+  customer_id: string | null;
+  customers: { name: string; phone: string } | null;
   technician: { full_name: string } | null;
+  device: { device_brand: string; serial_number: string | null; location_in_premises: string | null } | null;
 }
 
 interface InvoiceRow {
@@ -67,7 +83,9 @@ interface InventoryItem {
 
 interface RequestRow {
   id: string; trigger_type: string; urgency: string; status: string; description: string;
-  created_at: string; customers: { id: string; name: string; phone: string } | null;
+  created_at: string; triggered_by: string | null; suggested_date: string | null;
+  linked_appointment_id: string | null;
+  customers: { id: string; name: string; phone: string; address: string } | null;
 }
 
 interface TeamMember { id: string; full_name: string; role: string; phone: string; created_at: string; }
@@ -92,7 +110,6 @@ function fmtDate(d: string | null) {
 }
 
 const DEVICE_BRANDS = ['BioFamily 4-Stage', 'BioFamily 7-Stage', 'Ruhens Cooler', 'Family Cooler', 'Other'];
-const PLAN_TYPES = ['monthly', 'quarterly', 'biannual', 'annual'];
 
 export default function ManagerDashboard() {
   const { profile } = useAuth();
@@ -108,6 +125,22 @@ export default function ManagerDashboard() {
     customers: 0, activeContracts: 0, pendingInvoices: 0, pendingInvoicesAmount: 0,
     lowStock: 0, pendingRequests: 0, todayAppts: 0, expiringContracts: 0,
   });
+  /** The line under each headline number — what it is actually made of. */
+  const [overviewDetail, setOverviewDetail] = useState({
+    customersNew: 0,
+    contractVisitsLeft: 0,
+    invoicesOldestDays: 0,
+    lowStockNames: '',
+    requestsHigh: 0,
+    requestsLongestWait: 0,
+    todayUnconfirmed: 0,
+    expiringName: '',
+  });
+  const [workload, setWorkload] = useState<Record<string, {
+    today: number; inProgress: number; completedMonth: number; unconfirmed: number;
+    nextVisit: { at: string; customer: string } | null;
+  }>>({});
+  const [openMemberId, setOpenMemberId] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
@@ -118,7 +151,6 @@ export default function ManagerDashboard() {
   const [showScheduleVisit, setShowScheduleVisit] = useState(false);
   const [fullEditCustomerId, setFullEditCustomerId] = useState<string | null>(null);
   const [editDevice, setEditDevice] = useState<DeviceRow | null>(null);
-  const [editContract, setEditContract] = useState<ContractRow | null>(null);
 
   const [appointments, setAppointments] = useState<ApptRow[]>([]);
   const [apptSearch, setApptSearch] = useState('');
@@ -129,7 +161,11 @@ export default function ManagerDashboard() {
   const [markingPaid, setMarkingPaid] = useState<string | null>(null);
 
   const [contracts, setContracts] = useState<ContractRow[]>([]);
-  const [showAddContract, setShowAddContract] = useState(false);
+  const [contractModal, setContractModal] = useState<{ contract?: ContractRow } | null>(null);
+  const [openApptId, setOpenApptId] = useState<string | null>(null);
+  const [openRequestId, setOpenRequestId] = useState<string | null>(null);
+  const [requestFilter, setRequestFilter] = useState<'all' | 'pending' | 'scheduled' | 'dismissed'>('all');
+  const [scheduleFromRequest, setScheduleFromRequest] = useState<RequestRow | null>(null);
 
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -171,6 +207,87 @@ export default function ManagerDashboard() {
       todayAppts: todayApptCount.count ?? 0,
       expiringContracts: expContracts.count ?? 0,
     });
+
+    loadOverviewDetail(today, tomorrow, in30);
+  }
+
+  /** The second line on each card: what the headline number is made of. */
+  async function loadOverviewDetail(today: string, tomorrow: string, in30: string) {
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+    const [newCust, contractRows, oldestInv, lowItems, urgentReq, oldestReq, todayRows, expiring] =
+      await Promise.all([
+        supabase.from('customers').select('id', { count: 'exact', head: true }).gte('created_at', monthStart),
+        supabase.from('contracts').select('visits_included, visits_used').eq('status', 'active'),
+        supabase.from('invoices').select('issued_at').eq('payment_status', 'pending').order('issued_at').limit(1),
+        supabase.from('inventory').select('part_name').lt('quantity', 5).limit(2),
+        supabase.from('service_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('urgency', 'high'),
+        supabase.from('service_requests').select('created_at').eq('status', 'pending').order('created_at').limit(1),
+        supabase.from('appointments').select('confirmed').gte('scheduled_at', today).lt('scheduled_at', tomorrow),
+        supabase.from('contracts')
+          .select('end_date, customers(name)')
+          .eq('status', 'active').lte('end_date', in30).gte('end_date', today)
+          .order('end_date').limit(1),
+      ]);
+
+    const visitsLeft = ((contractRows.data ?? []) as { visits_included: number; visits_used: number }[])
+      .reduce((sum, c) => sum + Math.max(0, (c.visits_included ?? 0) - (c.visits_used ?? 0)), 0);
+
+    const days = (iso?: string) =>
+      iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)) : 0;
+
+    const expRow = (expiring.data ?? [])[0] as { end_date: string; customers: unknown } | undefined;
+    const expCust = one(expRow?.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string } | null;
+
+    setOverviewDetail({
+      customersNew: newCust.count ?? 0,
+      contractVisitsLeft: visitsLeft,
+      invoicesOldestDays: days((oldestInv.data ?? [])[0]?.issued_at),
+      lowStockNames: ((lowItems.data ?? []) as { part_name: string }[]).map(i => i.part_name).join('، '),
+      requestsHigh: urgentReq.count ?? 0,
+      requestsLongestWait: days((oldestReq.data ?? [])[0]?.created_at),
+      todayUnconfirmed: ((todayRows.data ?? []) as { confirmed: boolean }[]).filter(a => !a.confirmed).length,
+      expiringName: expRow ? `${expCust?.name ?? ''} · ${fmtDate(expRow.end_date)}` : '',
+    });
+  }
+
+  /** What each technician is actually carrying right now. */
+  async function loadWorkload() {
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+    const { data } = await supabase
+      .from('appointments')
+      .select('technician_id, status, confirmed, scheduled_at, customers(name)')
+      .not('technician_id', 'is', null)
+      .gte('scheduled_at', monthStart)
+      .order('scheduled_at');
+
+    const map: Record<string, {
+      today: number; inProgress: number; completedMonth: number; unconfirmed: number;
+      nextVisit: { at: string; customer: string } | null;
+    }> = {};
+
+    ((data ?? []) as Record<string, unknown>[]).forEach(row => {
+      const id = row.technician_id as string;
+      const at = row.scheduled_at as string;
+      const status = row.status as string;
+      const cust = one(row.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string } | null;
+
+      map[id] ??= { today: 0, inProgress: 0, completedMonth: 0, unconfirmed: 0, nextVisit: null };
+      const entry = map[id];
+
+      if (at >= today && at < tomorrow) entry.today += 1;
+      if (status === 'in_progress') entry.inProgress += 1;
+      if (status === 'completed') entry.completedMonth += 1;
+      if (!row.confirmed && status !== 'completed' && status !== 'cancelled') entry.unconfirmed += 1;
+      if (!entry.nextVisit && at >= new Date().toISOString() && status !== 'completed' && status !== 'cancelled') {
+        entry.nextVisit = { at, customer: cust?.name ?? '—' };
+      }
+    });
+
+    setWorkload(map);
   }
 
   async function loadCustomers() {
@@ -181,13 +298,14 @@ export default function ManagerDashboard() {
   async function loadAppointments() {
     const { data } = await supabase
       .from('appointments')
-      .select('id, service_type, visit_type, confirmed, scheduled_at, status, customers(name), technician:profiles!appointments_technician_id_fkey(full_name)')
+      .select('id, service_type, visit_type, confirmed, confirmed_at, confirmation_channel, scheduled_at, status, address, notes, approval_notes, technician_id, tds_before, tds_after, customer_id, customers(name, phone), technician:profiles!appointments_technician_id_fkey(full_name), device:customer_devices(device_brand, serial_number, location_in_premises)')
       .order('scheduled_at', { ascending: false })
       .limit(200);
     setAppointments(((data ?? []) as Record<string, unknown>[]).map(r => ({
       ...(r as unknown as ApptRow),
-      customers: one(r.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string } | null,
+      customers: one(r.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string; phone: string } | null,
       technician: one(r.technician as Record<string, unknown>[] | Record<string, unknown> | null) as { full_name: string } | null,
+      device: one(r.device as Record<string, unknown>[] | Record<string, unknown> | null) as ApptRow['device'],
     })));
   }
 
@@ -255,12 +373,12 @@ export default function ManagerDashboard() {
   async function loadRequests() {
     const { data } = await supabase
       .from('service_requests')
-      .select('id, trigger_type, urgency, status, description, created_at, customers(id, name, phone)')
+      .select('id, trigger_type, urgency, status, description, created_at, triggered_by, suggested_date, linked_appointment_id, customers(id, name, phone, address)')
       .order('created_at', { ascending: false })
       .limit(100);
     setRequests(((data ?? []) as Record<string, unknown>[]).map(r => ({
       ...(r as unknown as RequestRow),
-      customers: one(r.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { id: string; name: string; phone: string } | null,
+      customers: one(r.customers as Record<string, unknown>[] | Record<string, unknown> | null) as RequestRow['customers'],
     })));
   }
 
@@ -270,6 +388,7 @@ export default function ManagerDashboard() {
       .in('role', ['technician', 'admin', 'manager', 'owner'])
       .order('role');
     setTeam((data ?? []) as TeamMember[]);
+    loadWorkload();
   }
 
   async function loadNotifications() {
@@ -292,6 +411,8 @@ export default function ManagerDashboard() {
     })));
   }
 
+  // Runs once on mount; the loaders are stable for the life of the screen.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadOverview(); loadCustomers(); }, []);
 
   useEffect(() => {
@@ -462,25 +583,88 @@ export default function ManagerDashboard() {
 
         {/* ── OVERVIEW ── */}
         {tab === 'overview' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: t('manager.kpiCustomers'), value: stats.customers, color: 'text-blue-600', icon: Users },
-              { label: t('manager.kpiActiveContracts'), value: stats.activeContracts, color: 'text-green-600', icon: FileText },
-              { label: t('manager.kpiPendingInvoices'), value: `${stats.pendingInvoices} (${stats.pendingInvoicesAmount.toFixed(0)} ${t('invoice.jod')})`, color: 'text-amber-600', icon: Receipt },
-              { label: t('manager.kpiLowStock'), value: stats.lowStock, color: 'text-red-600', icon: Package },
-              { label: t('manager.kpiPendingRequests'), value: stats.pendingRequests, color: 'text-purple-600', icon: MessageSquare },
-              { label: t('manager.kpiTodayAppts'), value: stats.todayAppts, color: 'text-orange-600', icon: Calendar },
-              { label: t('manager.kpiExpiringContracts'), value: stats.expiringContracts, color: 'text-rose-600', icon: AlertTriangle },
-            ].map(s => {
-              const Icon = s.icon;
+              {
+                key: 'customers',
+                label: t('manager.kpiCustomers'),
+                value: String(stats.customers),
+                detail: t('manager.detailNewCustomers', { count: overviewDetail.customersNew }),
+                color: 'text-blue-600', ring: 'hover:border-blue-300', icon: Users,
+                go: () => setTab('customers'),
+              },
+              {
+                key: 'contracts',
+                label: t('manager.kpiActiveContracts'),
+                value: String(stats.activeContracts),
+                detail: t('manager.detailVisitsLeft', { count: overviewDetail.contractVisitsLeft }),
+                color: 'text-green-600', ring: 'hover:border-green-300', icon: FileText,
+                go: () => setTab('contracts'),
+              },
+              {
+                key: 'invoices',
+                label: t('manager.kpiPendingInvoices'),
+                value: `${stats.pendingInvoices} (${stats.pendingInvoicesAmount.toFixed(0)} ${t('invoice.jod')})`,
+                detail: stats.pendingInvoices > 0
+                  ? t('manager.detailOldestInvoice', { count: overviewDetail.invoicesOldestDays })
+                  : t('manager.detailAllSettled'),
+                color: 'text-amber-600', ring: 'hover:border-amber-300', icon: Receipt,
+                go: () => { setInvoiceFilter('pending'); setTab('invoices'); },
+              },
+              {
+                key: 'stock',
+                label: t('manager.kpiLowStock'),
+                value: String(stats.lowStock),
+                detail: overviewDetail.lowStockNames || t('manager.detailStockFine'),
+                color: 'text-red-600', ring: 'hover:border-red-300', icon: Package,
+                go: () => setTab('inventory'),
+              },
+              {
+                key: 'requests',
+                label: t('manager.kpiPendingRequests'),
+                value: String(stats.pendingRequests),
+                detail: overviewDetail.requestsHigh > 0
+                  ? t('manager.detailRequestsUrgent', { count: overviewDetail.requestsHigh, days: overviewDetail.requestsLongestWait })
+                  : t('manager.detailRequestsWait', { count: overviewDetail.requestsLongestWait }),
+                color: 'text-purple-600', ring: 'hover:border-purple-300', icon: MessageSquare,
+                go: () => { setRequestFilter('pending'); setTab('requests'); },
+              },
+              {
+                key: 'today',
+                label: t('manager.kpiTodayAppts'),
+                value: String(stats.todayAppts),
+                detail: overviewDetail.todayUnconfirmed > 0
+                  ? t('manager.detailTodayUnconfirmed', { count: overviewDetail.todayUnconfirmed })
+                  : t('manager.detailTodayAllConfirmed'),
+                color: 'text-orange-600', ring: 'hover:border-orange-300', icon: Calendar,
+                go: () => setTab('appointments'),
+              },
+              {
+                key: 'expiring',
+                label: t('manager.kpiExpiringContracts'),
+                value: String(stats.expiringContracts),
+                detail: overviewDetail.expiringName || t('manager.detailNoneExpiring'),
+                color: 'text-rose-600', ring: 'hover:border-rose-300', icon: AlertTriangle,
+                go: () => setTab('contracts'),
+              },
+            ].map(s2 => {
+              const Icon = s2.icon;
               return (
-                <div key={s.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Icon className={`w-4 h-4 ${s.color}`} />
-                    <span className="text-xs font-medium text-slate-500">{s.label}</span>
+                <button
+                  key={s2.key}
+                  onClick={s2.go}
+                  className={`bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-start transition hover:shadow-md ${s2.ring} group`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Icon className={`w-4 h-4 shrink-0 ${s2.color}`} />
+                      <span className="text-xs font-medium text-slate-500 truncate">{s2.label}</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 transition rtl:rotate-180 shrink-0" />
                   </div>
-                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                </div>
+                  <p className={`text-xl font-bold ${s2.color}`}>{s2.value}</p>
+                  <p className="text-[11px] text-slate-500 mt-1 truncate" title={s2.detail}>{s2.detail}</p>
+                </button>
               );
             })}
           </div>
@@ -554,29 +738,82 @@ export default function ManagerDashboard() {
               {filteredAppts.length === 0 ? (
                 <p className="text-center text-slate-400 text-sm py-10">{t('common.noData')}</p>
               ) : filteredAppts.map(a => (
-                <div key={a.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-semibold text-slate-900 text-sm truncate">{a.customers?.name ?? '—'}</p>
-                      <VisitTypeBadge visitType={a.visit_type} />
-                    </div>
-                    <p className="text-xs text-slate-500 truncate">
-                      {a.technician?.full_name ?? t('customer360.unassigned')} · {new Date(a.scheduled_at).toLocaleString('en-GB')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {!a.confirmed && a.status !== 'completed' && a.status !== 'cancelled' && (
+                (() => {
+                  const meta = visitStatusMeta(a.status);
+                  const open = openApptId === a.id;
+                  const reasons = visitBlockers(a);
+                  return (
+                    <div key={a.id}>
                       <button
-                        onClick={() => confirmVisit(a.id)}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-green-600 hover:bg-green-700 text-white transition"
+                        onClick={() => setOpenApptId(open ? null : a.id)}
+                        className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-start hover:bg-slate-50/60 transition"
                       >
-                        <CheckCircle className="w-3 h-3" />
-                        {t('visit.confirm')}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-slate-900 text-sm truncate">{a.customers?.name ?? '—'}</p>
+                            <VisitTypeBadge visitType={a.visit_type} />
+                            {!a.confirmed && a.status !== 'completed' && a.status !== 'cancelled' && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">
+                                {t('visit.unconfirmed')}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 truncate">
+                            {a.technician?.full_name ?? t('customer360.unassigned')} · {new Date(a.scheduled_at).toLocaleString('en-GB')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <StatusChip meta={meta} ns="visitStatus" />
+                          <ChevronDown className={`w-4 h-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+                        </div>
                       </button>
-                    )}
-                    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold ${statusColor[a.status] ?? 'bg-slate-100 text-slate-600'}`}>{a.status}</span>
-                  </div>
-                </div>
+
+                      {open && (
+                        <StatusDetailPanel
+                          meta={meta}
+                          ns="visitStatus"
+                          reasons={reasons}
+                          facts={[
+                            { label: t('visit.visitType'), value: t(`visit.type.${a.visit_type}`) },
+                            { label: t('visit.dateTime'), value: new Date(a.scheduled_at).toLocaleString('en-GB') },
+                            { label: t('visit.technician'), value: a.technician?.full_name ?? t('status.unassigned'), tone: a.technician_id ? undefined : 'warning' },
+                            {
+                              label: t('visit.confirmed'),
+                              value: a.confirmed
+                                ? `${t('visit.confirmed')}${a.confirmation_channel ? ` · ${t(`visit.channel.${a.confirmation_channel}`)}` : ''}`
+                                : t('visit.unconfirmed'),
+                              tone: a.confirmed ? 'success' : 'warning',
+                            },
+                            ...(a.device ? [{ label: t('visit.device'), value: [a.device.device_brand, a.device.serial_number, a.device.location_in_premises].filter(Boolean).join(' · ') }] : []),
+                            ...(a.address ? [{ label: t('visit.address'), value: a.address }] : []),
+                            ...(a.tds_before != null || a.tds_after != null ? [{ label: 'TDS', value: `${a.tds_before ?? '—'} → ${a.tds_after ?? '—'} ppm` }] : []),
+                            ...(a.approval_notes ? [{ label: t('technician.approvalNotes', 'Approval notes'), value: a.approval_notes }] : []),
+                            ...(a.notes ? [{ label: t('admin.notes'), value: a.notes }] : []),
+                          ]}
+                        >
+                          {!a.confirmed && a.status !== 'completed' && a.status !== 'cancelled' && (
+                            <button
+                              onClick={() => confirmVisit(a.id)}
+                              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              {t('visit.confirm')}
+                            </button>
+                          )}
+                          {a.customers?.phone && (
+                            <a
+                              href={`tel:${a.customers.phone}`}
+                              className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold transition"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              {a.customers.phone}
+                            </a>
+                          )}
+                        </StatusDetailPanel>
+                      )}
+                    </div>
+                  );
+                })()
               ))}
             </div>
           </div>
@@ -632,36 +869,104 @@ export default function ManagerDashboard() {
 
         {/* ── CONTRACTS ── */}
         {tab === 'contracts' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-end">
-              <button
-                onClick={() => setShowAddContract(true)}
-                className="flex items-center gap-1.5 bg-navy hover:bg-navy-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition"
-              >
-                <Plus className="w-3.5 h-3.5" /> {t('manager.newContract')}
-              </button>
-            </div>
-            <div className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
-              {contracts.length === 0 ? (
-                <p className="text-center text-slate-400 text-sm py-10">{t('common.noData')}</p>
-              ) : contracts.map(c => (
-                <div key={c.id} className="flex items-center justify-between gap-3 px-5 py-3.5 flex-wrap">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 text-sm">{c.customers?.name ?? '—'} <span className="text-slate-400 font-normal capitalize">· {c.plan_type}</span></p>
-                    <p className="text-xs text-slate-500">{fmtDate(c.start_date)} → {fmtDate(c.end_date)} · {c.visits_used}/{c.visits_included} {t('customer360.visits')} · {c.price_jod} {t('invoice.jod')}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold ${statusColor[c.status] ?? 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
-                    <button
-                      onClick={() => setEditContract(c)}
-                      title={t('common.edit')}
-                      className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+          <div className="space-y-4">
+            {/* Contracts that need attention before anything else */}
+            {contracts.some(c => contractHealth(c).alert) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <p className="text-sm font-bold text-amber-900 flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  {t('contract.needsAttention')}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {contracts.filter(c => contractHealth(c).alert).map(c => {
+                    const h = contractHealth(c);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setContractModal({ contract: c })}
+                        className="text-start bg-white border border-amber-200 rounded-xl px-3 py-2 hover:border-amber-400 transition"
+                      >
+                        <p className="text-xs font-semibold text-slate-900">{c.customers?.name ?? '—'}</p>
+                        <p className="text-[11px] text-amber-800">{t(`contract.state_${h.state}`)}</p>
+                      </button>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex justify-end">
+                <button
+                  onClick={() => setContractModal({})}
+                  className="flex items-center gap-1.5 bg-navy hover:bg-navy/90 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition"
+                >
+                  <Plus className="w-3.5 h-3.5" /> {t('manager.newContract')}
+                </button>
+              </div>
+              <div className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
+                {contracts.length === 0 ? (
+                  <p className="text-center text-slate-400 text-sm py-10">{t('common.noData')}</p>
+                ) : contracts.map(c => {
+                  const h = contractHealth(c);
+                  const pct = c.visits_included > 0
+                    ? Math.min(100, Math.round((c.visits_used / c.visits_included) * 100))
+                    : 0;
+                  return (
+                    <div key={c.id} className="px-5 py-4 flex items-start justify-between gap-4 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <p className="font-semibold text-slate-900 text-sm">{c.customers?.name ?? '—'}</p>
+                          <span className="text-[11px] text-slate-500">{t(`contract.plan_${c.plan_type}`, c.plan_type)}</span>
+                          <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold ${TONE_CLASS[h.tone]}`}>
+                            {t(`contract.state_${h.state}`)}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-500 mb-2">
+                          {fmtDate(c.start_date)} → {fmtDate(c.end_date)} · {c.price_jod} {t('invoice.jod')}
+                          {h.daysLeft >= 0 && ` · ${t('contract.daysLeft', { count: h.daysLeft })}`}
+                        </p>
+
+                        {/* Visits used against visits sold */}
+                        <div className="max-w-sm">
+                          <div className="flex items-center justify-between text-[11px] mb-1">
+                            <span className="text-slate-500">
+                              {t('contract.visitsProgress', { used: c.visits_used, total: c.visits_included })}
+                            </span>
+                            <span className={`font-bold ${h.remaining <= 1 ? 'text-amber-700' : 'text-slate-700'}`}>
+                              {t('contract.remainingCount', { count: h.remaining })}
+                            </span>
+                          </div>
+                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                h.remaining === 0 ? 'bg-red-500' : h.remaining === 1 ? 'bg-amber-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {c.auto_renew && (
+                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
+                            {t('contract.autoRenewShort')}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => setContractModal({ contract: c })}
+                          title={t('common.edit')}
+                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -742,29 +1047,127 @@ export default function ManagerDashboard() {
         {/* ── SERVICE REQUESTS ── */}
         {tab === 'requests' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-2">
+              {(['all', 'pending', 'scheduled', 'dismissed'] as const).map(f => {
+                const count = f === 'all' ? requests.length : requests.filter(r => r.status === f).length;
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setRequestFilter(f)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      requestFilter === f ? 'bg-navy text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {f === 'all' ? t('admin.filterAll') : t(`requestStatus.label_${f}`)}
+                    <span className="ms-1.5 opacity-70">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
-              {requests.length === 0 ? (
+              {requests.filter(r => requestFilter === 'all' || r.status === requestFilter).length === 0 ? (
                 <p className="text-center text-slate-400 text-sm py-10">{t('common.noData')}</p>
-              ) : requests.map(r => (
-                <div key={r.id} className="flex items-center justify-between gap-3 px-5 py-3.5 flex-wrap">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 text-sm">{r.customers?.name ?? '—'} <span className="text-slate-400 font-normal">· {t(`serviceRequests.type_${r.trigger_type}`, r.trigger_type)}</span></p>
-                    <p className="text-xs text-slate-500 truncate">{r.description || fmtDate(r.created_at)}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`px-2 py-1 rounded-lg text-[11px] font-semibold ${statusColor[r.status] ?? 'bg-slate-100 text-slate-600'}`}>{r.status}</span>
-                    {r.status === 'pending' && (
+              ) : requests
+                .filter(r => requestFilter === 'all' || r.status === requestFilter)
+                .map(r => {
+                  const meta = requestStatusMeta(r.status);
+                  const wait = waitingFor(r.created_at, r.urgency);
+                  const open = openRequestId === r.id;
+                  return (
+                    <div key={r.id}>
                       <button
-                        onClick={() => handleDismissRequest(r.id)}
-                        disabled={dismissingId === r.id}
-                        className="text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition"
+                        onClick={() => setOpenRequestId(open ? null : r.id)}
+                        className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-start hover:bg-slate-50/60 transition"
                       >
-                        {t('serviceRequests.dismiss')}
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 text-sm truncate">
+                            {r.customers?.name ?? '—'}
+                            <span className="text-slate-400 font-normal"> · {t(`serviceRequests.type_${r.trigger_type}`, r.trigger_type)}</span>
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {t(`requestReason.${r.trigger_type}`, r.description || '')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {r.status === 'pending' && (
+                            <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
+                              wait.breached ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {wait.days > 0
+                                ? t('requestStatus.waitingDays', { count: wait.days })
+                                : t('requestStatus.waitingHours', { count: wait.hours })}
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${TONE_CLASS[URGENCY_TONE[r.urgency] ?? 'neutral']}`}>
+                            {t(`serviceRequests.urgency_${r.urgency}`, r.urgency)}
+                          </span>
+                          <StatusChip meta={meta} ns="requestStatus" />
+                          <ChevronDown className={`w-4 h-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+                        </div>
                       </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+
+                      {open && (
+                        <StatusDetailPanel
+                          meta={meta}
+                          ns="requestStatus"
+                          reasons={[r.trigger_type, ...(wait.breached ? ['slaBreached'] : [])]}
+                          facts={[
+                            { label: t('requestStatus.raisedBy'), value: t(`requestStatus.by_${r.triggered_by ?? 'system'}`, r.triggered_by ?? 'system') },
+                            { label: t('requestStatus.raisedOn'), value: fmtDate(r.created_at) },
+                            {
+                              label: t('requestStatus.waiting'),
+                              value: wait.days > 0
+                                ? t('requestStatus.waitingDays', { count: wait.days })
+                                : t('requestStatus.waitingHours', { count: wait.hours }),
+                              tone: wait.breached ? 'danger' : undefined,
+                            },
+                            ...(r.suggested_date ? [{ label: t('requestStatus.suggestedDate'), value: fmtDate(r.suggested_date) }] : []),
+                            ...(r.customers?.phone ? [{ label: t('admin.phone'), value: r.customers.phone }] : []),
+                            ...(r.description ? [{ label: t('admin.notes'), value: r.description }] : []),
+                          ]}
+                        >
+                          {r.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => setScheduleFromRequest(r)}
+                                className="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition"
+                              >
+                                <Calendar className="w-3.5 h-3.5" />
+                                {t('requestStatus.scheduleNow')}
+                              </button>
+                              {r.customers?.phone && (
+                                <a
+                                  href={`tel:${r.customers.phone}`}
+                                  className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold transition"
+                                >
+                                  <Phone className="w-3.5 h-3.5" />
+                                  {t('requestStatus.callCustomer')}
+                                </a>
+                              )}
+                              <button
+                                onClick={() => handleDismissRequest(r.id)}
+                                disabled={dismissingId === r.id}
+                                className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-semibold transition"
+                              >
+                                {t('serviceRequests.dismiss')}
+                              </button>
+                            </>
+                          )}
+                          {r.status === 'scheduled' && (
+                            <button
+                              onClick={() => setTab('appointments')}
+                              className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold transition"
+                            >
+                              <Calendar className="w-3.5 h-3.5" />
+                              {t('requestStatus.seeVisit')}
+                            </button>
+                          )}
+                        </StatusDetailPanel>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}
@@ -774,15 +1177,122 @@ export default function ManagerDashboard() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {team.length === 0 ? (
               <p className="text-center text-slate-400 text-sm py-10 col-span-full">{t('common.noData')}</p>
-            ) : team.map(m => (
-              <div key={m.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex items-center gap-3">
-                <div className="w-10 h-10 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-bold shrink-0">{m.full_name?.[0]?.toUpperCase()}</div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-sm truncate">{m.full_name}</p>
-                  <p className="text-xs text-slate-500">{t(`roles.${m.role}`)} {m.phone ? `· ${m.phone}` : ''}</p>
+            ) : team.map(m => {
+              const load = workload[m.id];
+              const isTech = m.role === 'technician';
+              const open = openMemberId === m.id;
+              const busy = (load?.inProgress ?? 0) > 0;
+              const freeToday = isTech && !busy && (load?.today ?? 0) === 0;
+
+              return (
+                <div
+                  key={m.id}
+                  className={`bg-white rounded-2xl shadow-sm border transition ${
+                    open ? 'border-navy/30 shadow-md' : 'border-slate-100'
+                  }`}
+                >
+                  <button
+                    onClick={() => setOpenMemberId(open ? null : m.id)}
+                    className="w-full p-4 flex items-center gap-3 text-start"
+                  >
+                    <div className="w-10 h-10 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-bold shrink-0">
+                      {m.full_name?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-slate-900 text-sm truncate">{m.full_name}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {t(`roles.${m.role}`)}{m.phone ? ` · ${m.phone}` : ''}
+                      </p>
+                    </div>
+                    {isTech && (
+                      <span className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap ${
+                        busy ? 'bg-blue-50 text-blue-700'
+                          : freeToday ? 'bg-slate-100 text-slate-500'
+                          : 'bg-green-50 text-green-700'
+                      }`}>
+                        {busy ? t('team.onJob') : freeToday ? t('team.freeToday') : t('team.jobsToday', { count: load?.today ?? 0 })}
+                      </span>
+                    )}
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition shrink-0 ${open ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {open && (
+                    <div className="border-t border-slate-100 px-4 py-4 space-y-4">
+                      {isTech && (
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { label: t('team.today'), value: load?.today ?? 0, tone: 'text-slate-900' },
+                            { label: t('team.inProgress'), value: load?.inProgress ?? 0, tone: 'text-blue-700' },
+                            { label: t('team.doneThisMonth'), value: load?.completedMonth ?? 0, tone: 'text-green-700' },
+                            { label: t('visit.unconfirmed'), value: load?.unconfirmed ?? 0, tone: (load?.unconfirmed ?? 0) > 0 ? 'text-amber-700' : 'text-slate-900' },
+                          ].map(stat => (
+                            <div key={stat.label} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-center">
+                              <p className={`text-lg font-bold ${stat.tone}`}>{stat.value}</p>
+                              <p className="text-[10px] text-slate-500 leading-tight">{stat.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                          <span className="text-[11px] text-slate-500">{t('team.role')}</span>
+                          <span className="text-xs font-medium text-slate-800">{t(`roles.${m.role}`)}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                          <span className="text-[11px] text-slate-500">{t('admin.phone')}</span>
+                          <span className="text-xs font-medium text-slate-800" dir="ltr">{m.phone || '—'}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                          <span className="text-[11px] text-slate-500">{t('team.joined')}</span>
+                          <span className="text-xs font-medium text-slate-800">{fmtDate(m.created_at)}</span>
+                        </div>
+                        {isTech && load?.nextVisit && (
+                          <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1">
+                            <span className="text-[11px] text-slate-500">{t('team.nextVisit')}</span>
+                            <span className="text-xs font-medium text-slate-800 text-end">
+                              {new Date(load.nextVisit.at).toLocaleString('en-GB')} · {load.nextVisit.customer}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {m.phone && (
+                          <>
+                            <a
+                              href={`tel:${m.phone}`}
+                              className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold transition"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              {t('requestStatus.callCustomer')}
+                            </a>
+                            <a
+                              href={`https://wa.me/${m.phone.replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              {t('quote.viaWhatsApp')}
+                            </a>
+                          </>
+                        )}
+                        {isTech && (
+                          <button
+                            onClick={() => { setApptSearch(m.full_name); setTab('appointments'); }}
+                            className="flex items-center gap-1.5 bg-navy hover:bg-navy/90 text-white px-3 py-2 rounded-lg text-xs font-semibold transition"
+                          >
+                            <Calendar className="w-3.5 h-3.5" />
+                            {t('team.viewVisits')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -845,11 +1355,12 @@ export default function ManagerDashboard() {
         onUpdated={() => { loadDevices(); }}
       />
     )}
-    {editContract && (
-      <EditContractModal
-        contract={editContract}
-        onClose={() => setEditContract(null)}
-        onUpdated={() => { loadContracts(); loadOverview(); }}
+    {contractModal && (
+      <ContractModal
+        contract={contractModal.contract}
+        customers={customers}
+        onClose={() => setContractModal(null)}
+        onSaved={() => { loadContracts(); loadOverview(); }}
       />
     )}
     {showAddCustomer && (
@@ -857,6 +1368,18 @@ export default function ManagerDashboard() {
         onClose={() => setShowAddCustomer(false)}
         onCreated={() => { loadCustomers(); loadOverview(); }}
         onOpenImport={() => { setShowAddCustomer(false); setShowImportCustomers(true); }}
+      />
+    )}
+    {scheduleFromRequest && (
+      <ScheduleVisitModal
+        presetCustomerId={scheduleFromRequest.customers?.id}
+        presetCustomerName={scheduleFromRequest.customers?.name}
+        presetVisitType={TRIGGER_TO_VISIT_TYPE[scheduleFromRequest.trigger_type] ?? 'scheduled_visit'}
+        presetDate={scheduleFromRequest.suggested_date ? `${scheduleFromRequest.suggested_date}T09:00` : undefined}
+        presetNotes={scheduleFromRequest.description ?? ''}
+        serviceRequestId={scheduleFromRequest.id}
+        onClose={() => setScheduleFromRequest(null)}
+        onSaved={() => { loadRequests(); loadAppointments(); loadOverview(); }}
       />
     )}
     {showScheduleVisit && (
@@ -876,13 +1399,6 @@ export default function ManagerDashboard() {
     {selectedInvoice && (
       <PrintableInvoice invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
     )}
-    {showAddContract && (
-      <AddContractModal
-        customers={customers}
-        onClose={() => setShowAddContract(false)}
-        onCreated={() => { loadContracts(); loadOverview(); }}
-      />
-    )}
     {showAddDevice && (
       <AddDeviceModal
         customers={customers}
@@ -894,92 +1410,6 @@ export default function ManagerDashboard() {
   );
 }
 
-// ── Add Contract Modal ──────────────────────────────────────────────────────
-
-function AddContractModal({ customers, onClose, onCreated }: { customers: Customer[]; onClose: () => void; onCreated: () => void }) {
-  const { t } = useTranslation();
-  const { showToast } = useToast();
-  const [customerId, setCustomerId] = useState('');
-  const [planType, setPlanType] = useState('quarterly');
-  const [visitsIncluded, setVisitsIncluded] = useState(4);
-  const [priceJod, setPriceJod] = useState(0);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState('');
-  const [autoRenew, setAutoRenew] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!customerId || !endDate) { showToast(t('toast.warning'), 'warning'); return; }
-    setSaving(true);
-    const { error } = await supabase.from('contracts').insert({
-      customer_id: customerId, plan_type: planType, visits_included: visitsIncluded,
-      price_jod: priceJod, start_date: startDate, end_date: endDate, auto_renew: autoRenew, status: 'active',
-    });
-    setSaving(false);
-    if (error) { showToast(t('toast.error'), 'error'); return; }
-    showToast(t('toast.success'), 'success');
-    onCreated();
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-[95] flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto shadow-2xl">
-        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between">
-          <h2 className="font-bold text-slate-900 text-base">{t('manager.newContract')}</h2>
-          <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-slate-200 transition"><X className="w-4 h-4 text-slate-600" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('admin.selectCustomer')}</label>
-            <select value={customerId} onChange={e => setCustomerId(e.target.value)} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm">
-              <option value="">{t('admin.selectCustomer')}</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('manager.planType')}</label>
-              <select value={planType} onChange={e => setPlanType(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm capitalize">
-                {PLAN_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('customer360.visits')}</label>
-              <input type="number" min={1} value={visitsIncluded} onChange={e => setVisitsIncluded(Number(e.target.value))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('admin.dateFrom')}</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('admin.dateTo')}</label>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('invoice.amount')}</label>
-            <input type="number" min={0} step="0.01" value={priceJod} onChange={e => setPriceJod(Number(e.target.value))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
-          </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={autoRenew} onChange={e => setAutoRenew(e.target.checked)} className="rounded" />
-            {t('manager.autoRenew')}
-          </label>
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">{t('common.cancel')}</button>
-            <button type="submit" disabled={saving} className="flex-1 py-3 rounded-xl bg-navy hover:bg-navy-700 disabled:opacity-60 text-white text-sm font-semibold transition flex items-center justify-center gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {t('common.save')}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 // ── Add Device Modal ────────────────────────────────────────────────────────
 

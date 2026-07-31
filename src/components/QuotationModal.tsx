@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PrintableQuotation from './PrintableQuotation';
+import CustomerSummary from './CustomerSummary';
 import {
   defaultValidUntil,
   lineTotal,
@@ -296,6 +297,8 @@ export default function QuotationModal({
         ) : (
           /* ── Building the offer ────────────────────────────────────────── */
           <div className="p-5 space-y-5">
+            <CustomerSummary customerId={customerId} />
+
             <section className="space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">{t('quote.lines')}</h3>
 
