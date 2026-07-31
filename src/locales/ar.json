@@ -960,5 +960,17 @@
     "joined": "تاريخ الانضمام",
     "nextVisit": "الزيارة القادمة",
     "viewVisits": "زياراته"
+  },
+  "customerSummary": {
+    "loading": "جارٍ استرجاع سجل العميل...",
+    "devices": "الأجهزة",
+    "lastVisit": "آخر زيارة",
+    "contract": "العقد",
+    "warranty": "الضمان",
+    "noContract": "لا يوجد",
+    "none": "لا يوجد",
+    "openMap": "الخريطة",
+    "openRequests": "{{count}} طلب خدمة بانتظار الجدولة",
+    "alreadyBooked": "لديه زيارة محجوزة بتاريخ {{date}}"
   }
 }

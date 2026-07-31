@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
 import { useAuth } from '../contexts/AuthContext';
+import CustomerSummary from './CustomerSummary';
 import {
   CONFIRMATION_CHANNELS,
   toAppointmentRow,
@@ -254,6 +255,9 @@ export default function NewInstallationModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
+
+          {/* What is already known about this customer */}
+          <CustomerSummary customerId={customerId} />
 
           {/* ── Devices ─────────────────────────────────────────────────── */}
           <section className="space-y-3">

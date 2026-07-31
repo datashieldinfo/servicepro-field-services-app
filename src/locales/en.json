@@ -960,5 +960,17 @@
     "joined": "Joined",
     "nextVisit": "Next visit",
     "viewVisits": "Their visits"
+  },
+  "customerSummary": {
+    "loading": "Pulling up this customer's record...",
+    "devices": "Devices",
+    "lastVisit": "Last visit",
+    "contract": "Contract",
+    "warranty": "Warranty",
+    "noContract": "None",
+    "none": "None",
+    "openMap": "Map",
+    "openRequests": "{{count}} service request(s) still waiting to be scheduled",
+    "alreadyBooked": "Already has a visit booked for {{date}}"
   }
 }
