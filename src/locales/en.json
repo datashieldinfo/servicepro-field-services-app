@@ -16,7 +16,8 @@
     "inventory": "Inventory",
     "settings": "Settings",
     "logout": "Logout",
-    "notifications": "Notifications"
+    "notifications": "Notifications",
+    "getApp": "Get the app"
   },
   "roles": {
     "owner": "Super Admin",
@@ -759,6 +760,95 @@
     "save": "Register & schedule",
     "saved": "Installation booked — {{count}} device(s) registered",
     "errNoDevices": "Add at least one device"
+  },
+  "getApp": {
+    "title": "Install ServisGo on your device",
+    "subtitle": "One app for Android, iPhone, iPad, Windows and Mac. Install it straight from this page — it then opens from your home screen or desktop like any other app, with no app store account.",
+    "installNow": "Install now",
+    "installedNow": "Installed — look for ServisGo with your other apps",
+    "runningInstalled": "You are already using the installed app",
+    "followSteps": "This browser has no one-tap install. Follow the steps for your device below — it takes about 20 seconds.",
+    "noStoreNeeded": "Free · no Play Store or App Store account · installs in seconds",
+    "yourDevice": "Your device",
+    "otherDevices": "Other devices",
+    "allDevices": "All devices",
+    "backToLogin": "Sign in",
+    "loginLink": "Install the app on your phone or computer",
+    "iosSafariOnly": "On iPhone and iPad only Safari can add the app to the home screen. Open this page in Safari first, then follow the steps.",
+    "platforms": {
+      "android": "Android phone or tablet",
+      "ios": "iPhone or iPad",
+      "windows": "Windows PC",
+      "macos": "Mac"
+    },
+    "browsers": {
+      "android": "Chrome, Edge or Samsung Internet",
+      "ios": "Safari",
+      "windows": "Chrome or Edge",
+      "macos": "Chrome, Edge or Safari 17+"
+    },
+    "steps": {
+      "android": [
+        "Open this page in Chrome.",
+        "Tap the ⋮ menu at the top right.",
+        "Choose “Install app” (or “Add to Home screen”).",
+        "Confirm with Install — ServisGo appears with your other apps."
+      ],
+      "androidSamsung": [
+        "Open this page in Samsung Internet.",
+        "Tap the ☰ menu at the bottom of the screen.",
+        "Choose “Add page to” then “Home screen”.",
+        "Tap Add — ServisGo appears with your other apps."
+      ],
+      "ios": [
+        "Open this page in Safari.",
+        "Tap the Share button at the bottom of the screen.",
+        "Scroll down and choose “Add to Home Screen”.",
+        "Tap Add — ServisGo appears on your home screen."
+      ],
+      "windows": [
+        "Open this page in Chrome or Edge.",
+        "Click the install icon at the end of the address bar (a screen with a down arrow).",
+        "Click Install.",
+        "Pin ServisGo to the taskbar or Start menu when Windows offers to."
+      ],
+      "macos": [
+        "Open this page in Chrome or Edge.",
+        "Click the install icon at the end of the address bar, then Install.",
+        "On Safari 17 or newer choose File → Add to Dock instead.",
+        "ServisGo now opens in its own window from the Dock or Launchpad."
+      ]
+    },
+    "notes": {
+      "android": "Nothing changes about signing in — it is the same account you use in the browser.",
+      "ios": "The Share button is the square with an arrow pointing up.",
+      "windows": "No install icon? Open the ⋮ menu → Cast, save and share → Install this site as an app.",
+      "macos": "On Safari older than 17, install with Chrome or Edge instead."
+    },
+    "benefits": {
+      "offline": {
+        "title": "Holds up on a weak signal",
+        "desc": "The app keeps opening on site, and data loads again the moment you have a connection."
+      },
+      "updates": {
+        "title": "Always up to date",
+        "desc": "New versions arrive on their own — nothing to download or update by hand."
+      },
+      "home": {
+        "title": "Its own icon and window",
+        "desc": "Full screen with no address bar — on the home screen, the Dock or the taskbar."
+      }
+    },
+    "share": {
+      "title": "Send the install link",
+      "desc": "Give technicians and customers this link — it opens this same install page on their device.",
+      "copy": "Copy link",
+      "copied": "Copied",
+      "whatsapp": "WhatsApp",
+      "email": "Email",
+      "subject": "Install the ServisGo app",
+      "message": "Install ServisGo on your phone or computer: {{url}}"
+    }
   },
   "quote": {
     "title": "Price Offer",
