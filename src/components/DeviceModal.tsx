@@ -3,7 +3,7 @@ import { X, Loader2, Cpu, Save, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
-import { DEVICE_BRANDS, type DeviceRecord } from '../lib/deviceFields';
+import { DEVICE_BRANDS, USAGE_TYPES, USAGE_TONE, type DeviceRecord, type UsageType } from '../lib/deviceFields';
 
 export type EditableDevice = DeviceRecord;
 
@@ -43,6 +43,7 @@ export default function DeviceModal({
   const [installDate, setInstallDate] = useState(device?.installation_date ?? '');
   const [warrantyExpires, setWarrantyExpires] = useState(device?.warranty_expires ?? '');
   const [location, setLocation] = useState(device?.location_in_premises ?? '');
+  const [usageType, setUsageType] = useState<UsageType>(device?.usage_type ?? 'home');
   const [saving, setSaving] = useState(false);
 
   const needsOwnerPicker = !editing && !customerId && !!customers?.length;
@@ -64,6 +65,7 @@ export default function DeviceModal({
       installation_date: installDate || null,
       warranty_expires: warrantyExpires || null,
       location_in_premises: location.trim() || null,
+      usage_type: usageType,
     };
 
     const { error } = editing
@@ -126,6 +128,25 @@ export default function DeviceModal({
             <select value={brand} onChange={e => setBrand(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
               {DEVICE_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
+          </div>
+
+          {/* Home or industrial — it decides the filters fitted and the interval */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('device.usageType')}</label>
+            <div className="grid grid-cols-2 gap-2">
+              {USAGE_TYPES.map(u => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setUsageType(u)}
+                  className={`px-3 py-2.5 rounded-xl border-2 text-xs font-semibold transition ${
+                    usageType === u ? `${USAGE_TONE[u]} border-current` : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {t(`device.usage_${u}`)}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

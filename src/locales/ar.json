@@ -69,7 +69,12 @@
     "confirm": "تأكيد",
     "back": "رجوع",
     "export": "تصدير",
-    "close": "إغلاق"
+    "close": "إغلاق",
+    "yes": "نعم",
+    "no": "لا",
+    "all": "الكل",
+    "notes": "ملاحظات",
+    "error": "حدث خطأ ما"
   },
   "status": {
     "pending": "معلق",
@@ -93,7 +98,11 @@
     "quantity": "الكمية",
     "unit": "الوحدة",
     "stockStatus": "حالة المخزون",
-    "inStock": "متوفر"
+    "inStock": "متوفر",
+    "category_part": "قطعة",
+    "category_device": "جهاز",
+    "category_accessory": "ملحق",
+    "category_service": "خدمة"
   },
   "notifications": {
     "title": "الإشعارات",
@@ -258,7 +267,8 @@
     "awaitingActionBadge": "لم يُتخذ إجراء",
     "nextStep": "الخطوة التالية",
     "awaitingActionTitle": "{{count}} عميل بدون خطوة تالية حتى الآن",
-    "emailLabel": "البريد الإلكتروني"
+    "emailLabel": "البريد الإلكتروني",
+    "sortNewest": "الأحدث"
   },
   "technician": {
     "hey": "مرحباً",
@@ -473,7 +483,9 @@
     "noPartsUsed": "لم تُستخدم قطع",
     "invoices": "الفواتير",
     "serviceRequests": "طلبات الخدمة",
-    "notificationsSent": "الإشعارات المرسلة"
+    "notificationsSent": "الإشعارات المرسلة",
+    "lastOffer": "آخر عرض سعر",
+    "noOffers": "لم يُرسل أي عرض سعر لهذا العميل بعد"
   },
   "invoice": {
     "title": "فاتورة",
@@ -895,7 +907,13 @@
     "decline": "العميل رفض العرض",
     "approvedToast": "تم اعتماد العرض {{number}}",
     "declinedToast": "تم تسجيل رفض العرض {{number}}",
-    "viewPrint": "عرض / طباعة العرض"
+    "viewPrint": "عرض / طباعة العرض",
+    "viewOffer": "عرض / طباعة العرض",
+    "status_draft": "مسودة",
+    "status_sent": "مُرسل",
+    "status_accepted": "مقبول",
+    "status_declined": "مرفوض",
+    "status_expired": "منتهي"
   },
   "firstLogin": {
     "title": "اختر كلمة المرور",
@@ -1040,7 +1058,26 @@
     "needsAttention": "عقود تحتاج إلى متابعة",
     "daysLeft": "متبقٍ {{count}} يوم",
     "visitsProgress": "{{used}} من {{total}} زيارة مستخدمة",
-    "remainingCount": "متبقٍ {{count}}"
+    "remainingCount": "متبقٍ {{count}}",
+    "filterCategory": "فئة الفلتر",
+    "filterCategoryHint": "منزلي أو صناعي — وهو ما يحدد الفلاتر المركّبة ودورية الزيارات.",
+    "coveredDevices": "الأجهزة المشمولة",
+    "coveredDevicesHint": "أزل التحديد عن أي جهاز لا يشمله العقد. لكل جهاز فئة الفلتر الخاصة به.",
+    "pickCustomerFirst": "اختر العميل لعرض أجهزته المسجّلة.",
+    "noDevicesRegistered": "لا توجد أجهزة مسجّلة لهذا العميل بعد. يمكن إصدار العقد الآن وتسجيل الجهاز عند التركيب.",
+    "noDevicesOnContract": "لم يُحدَّد جهاز بعينه — يشمل هذا العقد منظومة العميل كاملةً.",
+    "status_new": "جديد",
+    "statusNewHint": "أول عقد لهذا العميل.",
+    "createAndPrint": "إنشاء وطباعة",
+    "print": "طباعة العقد",
+    "printedOn": "تاريخ الطباعة",
+    "firstParty": "الطرف الأول",
+    "firstPartyRole": "الشركة — مزوّد الخدمة",
+    "secondParty": "الطرف الثاني",
+    "secondPartyRole": "العميل",
+    "termsTitle": "الشروط والأحكام",
+    "termsVersion": "إصدار الشروط {{version}}",
+    "signatureLine": "الاسم والتوقيع والتاريخ"
   },
   "team": {
     "onJob": "في مهمة",
@@ -1080,5 +1117,82 @@
     "emailHint": "يستخدم العميل هذا البريد لتسجيل الدخول.",
     "needEmail": "البريد الإلكتروني مطلوب",
     "passwordReplaced": "هذا يستبدل كلمة مرور العميل السابقة. سلّم الرابط متى أمكن — وكلمة المرور هي البديل."
+  },
+  "customerStatus": {
+    "new": "جديد",
+    "offerSent": "عرض مُرسل",
+    "scheduled": "زيارة محجوزة",
+    "underContract": "ضمن عقد",
+    "contractExpiring": "عقد قارب الانتهاء",
+    "contractExpired": "عقد منتهٍ",
+    "served": "تمت خدمته",
+    "dormant": "غير نشط",
+    "hint_new": "مسجّل ولم يحدث شيء بعد — لا عرض ولا زيارة.",
+    "hint_offerSent": "لديه عرض سعر لم يُجب عليه بعد.",
+    "hint_scheduled": "هناك زيارة محجوزة ولم تُنفَّذ أي زيارة بعد.",
+    "hint_underContract": "لديه عقد صيانة ساري.",
+    "hint_contractExpiring": "عقده ينتهي خلال 30 يوماً — وقت التجديد.",
+    "hint_contractExpired": "انتهى العقد ولم يُجدَّد.",
+    "hint_served": "نُفِّذت له زيارات بدون عقد ساري.",
+    "hint_dormant": "لم يحدث أي شيء منذ أكثر من سنة."
+  },
+  "device": {
+    "screenTitle": "الأجهزة",
+    "usageType": "نوع الاستخدام",
+    "usage_home": "استخدام منزلي",
+    "usage_industrial": "استخدام صناعي",
+    "usageHint_home": "المنازل والشقق والمكاتب",
+    "usageHint_industrial": "المصانع والمطاعم والمنشآت الكبيرة",
+    "searchPlaceholder": "ابحث بالموديل أو اسم العميل أو الرقم التسلسلي",
+    "unitsInstalled": "{{count}} جهاز مركّب",
+    "customersWith": "{{count}} عميل",
+    "noneInstalled": "لا يوجد جهاز مركّب — هذا الموديل مُسعَّر في القائمة فقط."
+  },
+  "inventoryCard": {
+    "open": "بطاقة الصنف",
+    "onHand": "المتوفر",
+    "totalIn": "إجمالي الوارد",
+    "totalOut": "إجمالي الصادر",
+    "costSelling": "الكلفة / البيع",
+    "lowStock": "أقل من حد إعادة الطلب ({{threshold}})",
+    "hasExpired": "توجد دفعة تجاوزت تاريخ الصلاحية",
+    "byBranch": "المخزون حسب الفرع",
+    "branch": "الفرع",
+    "quantity": "الكمية",
+    "lastFilled": "آخر تعبئة",
+    "expiry": "تاريخ الانتهاء",
+    "noExpiry": "لا ينطبق",
+    "lastEntry": "آخر إدخال",
+    "lastIssue": "آخر صرف",
+    "by": "بواسطة",
+    "from": "من",
+    "to": "إلى",
+    "fromPlaceholder": "اسم المورّد",
+    "toPlaceholder": "فني أو مهمة أو عميل",
+    "reference": "المرجع",
+    "referencePlaceholder": "رقم الفاتورة أو الطلب",
+    "batch": "رقم الدفعة",
+    "ifApplicable": "(إن وُجد)",
+    "movements": "الحركات",
+    "movement": "الحركة",
+    "date": "التاريخ",
+    "party": "من / إلى",
+    "reason": "السبب",
+    "noMovements": "لا توجد حركات مسجّلة بعد",
+    "recordMovement": "تسجيل حركة",
+    "book": "حفظ الحركة",
+    "movementSaved": "تم تسجيل الحركة",
+    "errBranch": "اختر الفرع",
+    "errQuantity": "الكمية يجب أن تكون 1 على الأقل",
+    "direction_in": "وارد",
+    "direction_out": "صادر",
+    "reason_opening": "رصيد افتتاحي",
+    "reason_purchase": "شراء",
+    "reason_return": "إرجاع",
+    "reason_transfer": "تحويل بين الفروع",
+    "reason_issue": "صرف",
+    "reason_consumption": "استهلاك في مهمة",
+    "reason_damage": "تلف",
+    "reason_adjustment": "تسوية"
   }
 }

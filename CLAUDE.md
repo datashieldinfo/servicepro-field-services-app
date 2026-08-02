@@ -60,7 +60,13 @@ There are no tests. There is no test runner configured.
 **BioFamily / invoicing (20260529):**
 - `invoices` — `invoice_number` (auto-generated INV-YYYY-NNN), `appointment_id`, `customer_id`, `technician_id`, `parts_used` (jsonb), `labor_cost`, `parts_cost`, `total_amount`, `payment_method` (cash/bank_transfer/cliq/other), `payment_status` (pending/paid/partial), `issued_at`, `paid_at`, `created_by`
 - `customer_devices` — device registry per customer: `device_brand` (BioFamily 4-Stage/7-Stage/Ruhens Cooler/Family Cooler/Other), `device_model`, `serial_number`, `installation_date`, `warranty_expires`, `location_in_premises`
-- `contracts` — `plan_type` (monthly/quarterly/biannual/annual), `visits_included`, `visits_used`, `price_jod`, `start_date`, `end_date`, `auto_renew`, `status` (active/expired/cancelled/pending)
+- `contracts` — `plan_type` (monthly/quarterly/biannual/annual), `visits_included`, `visits_used`, `price_jod`, `start_date`, `end_date`, `auto_renew`, `status` (new/active/expired/cancelled/pending), `contract_number`, `filter_category`
+
+**Contracts, devices and stock (20260802):**
+- `contract_devices` — which registered devices a contract covers, and the filter class fitted to each
+- `branches` — stock locations (store/van/workshop), one `is_default`
+- `inventory_transactions` — the stock ledger; `inventory_branch_stock` is the per-branch view over it
+- `customer_devices.usage_type` / `inventory.usage_type` — home or industrial use
 
 Migrations live in `supabase/migrations/` in timestamp order. The `appointments` table has a `technician_id` FK to `profiles` (aliased in queries as `technician:profiles!appointments_technician_id_fkey`).
 
@@ -83,17 +89,40 @@ Migrations live in `supabase/migrations/` in timestamp order. The `appointments`
 
 ### Contract management
 
-- **DB:** `contracts` table (migration `20260529000003_four_features.sql`).
-- **UI — Admin:** Fetches contracts per customer on demand (inline with customer row). Dashboard shows a banner when contracts are expiring within 30 days. No create/edit UI yet — read-only view only.
+- **DB:** `contracts` (migration `20260529000003_four_features.sql`), extended by
+  `20260802000001_contract_devices_and_usage_type.sql` with `contract_number` (`CT-YYYY-NNN` from
+  `next_contract_number()`, existing rows backfilled), `filter_category` (home/industrial), the
+  `new` status, and the `contract_devices` join table (contract ↔ `customer_devices`, each link
+  carrying its own `filter_category`).
+- **`ContractModal`** — the single create/edit form, used by Manager and Admin. Picking the customer
+  loads their registered devices; all are ticked by default at the class each device was registered
+  with, and the contract's own class follows them until it is set by hand. The status list is only
+  offered once a customer has contract history — a first contract is `new` and never typed.
+  Saving generates the number, syncs `contract_devices`, and opens the printable copy.
+- **`PrintableContract`** — the signable document: both parties, what was agreed, the devices covered
+  with their filter class, the terms, and two signature blocks. Print via `window.print()`
+  (`data-print-overlay`, rendered into `<body>`), plus WhatsApp and email share.
+- **`src/lib/contractTerms.ts`** — the Jordanian terms and conditions (Civil Code No. 43/1976,
+  Consumer Protection Law No. 7/2017, Electronic Transactions Law No. 15/2015; Amman jurisdiction;
+  the Arabic text governs). **A template, not legal advice** — have counsel read it, then bump
+  `TERMS_VERSION`, which is printed on every copy.
+- **UI — Manager:** contracts tab lists number, plan, filter class and health, with print and edit
+  actions on each row.
 - **UI — Owner:** KPI cards for contract MRR (calculated from `price_jod` × frequency) and renewal rate (% of contracts with `auto_renew = true`).
 - **UI — Customer:** Fetches own active contract and displays plan type, visits used/included, expiry date.
 
 ### Customer devices
 
-- **DB:** `customer_devices` table (migration `20260529000003_four_features.sql`).
-- **UI — Admin:** "Devices" button on each customer row opens a modal showing that customer's registered devices (brand, model, serial number, installation date, warranty expiry, location).
+- **DB:** `customer_devices` (migration `20260529000003_four_features.sql`), plus `usage_type`
+  (home/industrial) from `20260802000001`. `inventory` carries the same column so a priced device
+  model states what it is for.
+- **`DeviceCatalogue`** — the devices screen, in Manager and Admin: grouped by usage type, then by
+  model, each group expanding to the customers who have that model (with serial, install date and
+  warranty). Catalogue models with nothing installed are listed too, priced from `inventory`.
+  Search covers model, customer and serial number.
+- **`DeviceModal`** — registers and edits a device, including its usage type.
+- **UI — Admin:** also a "Devices" button per customer row, listing that customer's devices.
 - **UI — Customer:** Fetches and displays own registered devices in dashboard.
-- **No create/edit UI** for devices in any dashboard — admin can only view, not add or edit.
 
 ### Customer records (individual / corporate) + import
 
@@ -171,6 +200,39 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
   visit to the first device and updating the customer's install/warranty dates. When it came from an
   offer, the quotation is marked accepted with `converted_appointment_id`.
 - **`ScheduleVisitModal`** — the general scheduler for every other visit type.
+
+### Stock: branches, movements and the item card
+
+- **DB:** `20260802000002_inventory_branches_and_transactions.sql` adds `branches` (seeded with a
+  main store, `is_default` guarded to exactly one row) and `inventory_transactions` — the ledger:
+  direction (in/out), reason, branch, quantity, `counterparty` (supplier it came from or technician
+  it went to), reference, batch, expiry, `performed_by` and note. Existing stock is carried in as an
+  `opening` row so ledger and counter agree from day one.
+- **`inventory_branch_stock`** — a `security_invoker` view: quantity, last fill and nearest expiry
+  per item per branch, derived from the ledger.
+- **`inventory.quantity` cannot drift.** A movement recomputes it; a quantity typed straight into
+  the old inventory screen writes its own `adjustment` movement, so every number on the card is
+  explained by a row underneath it.
+- **`src/lib/inventoryLedger.ts`** — `fetchBranches`, `fetchBranchStock`, `fetchItemLedger`,
+  `recordMovement`, `summariseLedger` (totals in/out, last entry, last issue, nearest expiry),
+  `branchLabel`.
+- **`InventoryItemCard`** — opened from the inventory list in Manager and Admin: stock per branch,
+  last fill (date, who booked it, who it came from), nearest expiry, low-stock and expiry warnings,
+  the full movement history, and a form to book a movement.
+
+### Customer status
+
+- **`customerStatus()`** in `src/lib/statusMeta.ts` derives where a customer stands from their
+  traces: `underContract`, `contractExpiring`, `contractExpired`, `offerSent`, `scheduled`,
+  `served`, `dormant` (nothing for a year) or `new`. First match wins, top to bottom.
+- **`loadCustomerActionState()`** returns those statuses alongside the "awaiting action" set and the
+  open offers, in the same round trip, so a customer list can badge every row.
+- **`CustomerStatusBadge`** renders it; Manager and Admin customer lists show it, and so does the
+  header of `Customer360Panel`.
+- Customer lists are ordered newest-registration-first, and office appointment lists newest-visit-
+  first. The technician's day view stays in chronological order — that is the order they work in.
+- `Customer360Panel` also shows the **last price offer** the customer received (number, date, total,
+  status, lines) with a button to reopen the printable offer, via `loadLatestOffer()`.
 
 ### Installable app (Android / iOS / Windows / macOS)
 
@@ -281,8 +343,8 @@ Accessible from `OwnerDashboard`. DB-connected: queries `appointments` (status=c
 - **Real-time subscriptions** — not implemented; dashboards fetch on mount only.
 - **Revenue chart** (`OwnerDashboard`) — hardcoded static array; `ReportsPage` is now DB-connected.
 - **WhatsApp number** — hardcoded to `0778068705` in `PrintableInvoice.tsx`; should be configurable. Emergency WhatsApp link in `CustomerDashboard` hardcoded to `+962791234567`.
-- **Contract create/edit UI** — DB table exists; Admin/Owner/Customer can view contracts but no UI to create or edit them.
-- **Customer devices create/edit UI** — DB table exists; Admin can view devices per customer but no UI to register or edit devices.
+- **Contract terms** — `src/lib/contractTerms.ts` is a template drafted against Jordanian law; it needs a lawyer's review before the first signed contract, after which `TERMS_VERSION` should be bumped.
+- **Contract signature capture** — the printed copy has signature blocks, but a signed contract is not recorded back onto the row (no `signed_at`).
 - **Customer edit UI** — the new structured fields can be created and imported, but there is no edit screen for an existing customer yet (`AddCustomerModal` is create-only).
 - **`.xlsx` import** — only CSV is parsed (no spreadsheet dependency); `.xlsx` uploads are rejected with a "save as CSV" message.
 - **Contact Picker import** — implemented behind feature detection; only Android Chrome-family browsers expose `navigator.contacts` today.

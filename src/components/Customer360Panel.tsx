@@ -2,12 +2,18 @@ import { useEffect, useState } from 'react';
 import {
   X, Phone, Mail, MapPin, Calendar, ShieldCheck, Cpu, FileText, Receipt,
   Droplets, MessageSquare, Bell, ChevronDown, ChevronUp, User, Wrench, Loader2, Pencil,
+  FileSpreadsheet, Printer,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import CustomerFullEditPage from './CustomerFullEditPage';
 import CustomerNextStep from './CustomerNextStep';
 import { fmtDate } from '../lib/format';
+import { loadLatestOffer, type OpenOffer } from '../lib/customerActionState';
+import { customerStatus, type CustomerStatus } from '../lib/statusMeta';
+import CustomerStatusBadge from './CustomerStatusBadge';
+import PrintableQuotation from './PrintableQuotation';
+import { QUOTATION_STATUS_COLORS } from '../lib/quotationFields';
 
 interface Props {
   customerId: string;
@@ -81,6 +87,10 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
   const [drillData, setDrillData] = useState<Record<string, ApptDrill>>({});
   const [drillLoading, setDrillLoading] = useState<string | null>(null);
   const [showFullEdit, setShowFullEdit] = useState(false);
+  /* The last offer this customer was sent, whatever became of it. */
+  const [lastOffer, setLastOffer] = useState<OpenOffer | null>(null);
+  const [offerPrint, setOfferPrint] = useState(false);
+  const [status, setStatus] = useState<CustomerStatus | null>(null);
 
   useEffect(() => { loadAll(); }, [customerId]);
 
@@ -120,6 +130,22 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
     setInvoices((invRes.data ?? []) as InvoiceRow[]);
     setRequests((reqRes.data ?? []) as RequestRow[]);
     setFilters((filtRes.data ?? []) as FilterRow[]);
+
+    /* The last price offer they were sent, and where that leaves them. */
+    const offer = await loadLatestOffer(customerId);
+    setLastOffer(offer);
+
+    const visits = (apptRes.data ?? []) as { status: string; scheduled_at: string }[];
+    const newestContract = ((conRes.data ?? []) as ContractRow[])[0] ?? null;
+    setStatus(customerStatus({
+      contract: newestContract ? { status: newestContract.status, end_date: newestContract.end_date } : null,
+      openOffer: Boolean(offer && (offer.status === 'draft' || offer.status === 'sent')),
+      lastVisitAt: visits.filter(v => v.status === 'completed')[0]?.scheduled_at ?? null,
+      nextVisitAt: visits
+        .filter(v => v.status !== 'completed' && v.status !== 'cancelled' && new Date(v.scheduled_at) >= new Date())
+        .map(v => v.scheduled_at)
+        .sort()[0] ?? null,
+    }));
 
     if (cust?.user_id) {
       const { data: notifData } = await supabase
@@ -190,7 +216,10 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
             </div>
             <div className="min-w-0">
               <h2 className="font-bold text-slate-900 text-base truncate">{customer?.name ?? '—'}</h2>
-              <p className="text-xs text-slate-500">{t('customer360.title')}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-xs text-slate-500">{t('customer360.title')}</p>
+                <CustomerStatusBadge status={status} small />
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -265,6 +294,45 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
                         {d.location_in_premises && <p className="text-slate-500">{d.location_in_premises}</p>}
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* The last price offer they received */}
+              <div>
+                <p className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-slate-400" /> {t('customer360.lastOffer')}
+                </p>
+                {!lastOffer ? (
+                  <p className="text-xs text-slate-400 bg-white rounded-xl border border-slate-100 px-4 py-3">
+                    {t('customer360.noOffers')}
+                  </p>
+                ) : (
+                  <div className="bg-white rounded-xl border border-slate-100 p-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                      <p className="font-bold text-slate-900 text-sm" dir="ltr">{lastOffer.quote_number}</p>
+                      <span className={`px-2 py-0.5 rounded-lg text-[11px] font-bold ${
+                        QUOTATION_STATUS_COLORS[lastOffer.status as keyof typeof QUOTATION_STATUS_COLORS] ?? 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {t(`quote.status_${lastOffer.status}`, lastOffer.status)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {fmtDate(lastOffer.created_at)}
+                      {lastOffer.valid_until && ` · ${t('quote.validUntil')}: ${fmtDate(lastOffer.valid_until)}`}
+                      {` · ${Number(lastOffer.total_amount ?? 0).toFixed(2)} ${t('invoice.jod')}`}
+                    </p>
+                    {(lastOffer.items ?? []).length > 0 && (
+                      <p className="text-[11px] text-slate-500 mt-1.5">
+                        {(lastOffer.items ?? []).map(i => `${i.name} ×${i.qty}`).join(' · ')}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => setOfferPrint(true)}
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-navy bg-navy/5 hover:bg-navy/10 px-2.5 py-1.5 rounded-lg transition"
+                    >
+                      <Printer className="w-3.5 h-3.5" /> {t('quote.viewOffer')}
+                    </button>
                   </div>
                 )}
               </div>
@@ -435,6 +503,29 @@ export default function Customer360Panel({ customerId, onClose }: Props) {
           </div>
         )}
       </div>
+      {offerPrint && lastOffer && customer && (
+        <PrintableQuotation
+          quote={{
+            quoteNumber: lastOffer.quote_number,
+            issuedAt: lastOffer.created_at,
+            validUntil: lastOffer.valid_until,
+            customer: {
+              name: customer.name,
+              address: customer.address ?? '',
+              phone: customer.phone ?? '',
+              email: customer.email || undefined,
+            },
+            items: lastOffer.items ?? [],
+            subtotal: Number(lastOffer.subtotal ?? 0),
+            discount: Number(lastOffer.discount ?? 0),
+            total: Number(lastOffer.total_amount ?? 0),
+            currency: 'JOD',
+            notes: lastOffer.notes ?? '',
+            status: lastOffer.status,
+          }}
+          onClose={() => setOfferPrint(false)}
+        />
+      )}
       {showFullEdit && customer && (
         <CustomerFullEditPage
           customerId={customer.id}

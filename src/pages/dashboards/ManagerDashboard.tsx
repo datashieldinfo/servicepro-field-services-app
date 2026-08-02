@@ -3,7 +3,7 @@ import {
   Users, Calendar, Receipt, FileText, Cpu, Package, MessageSquare, UserCog,
   Bell, ClipboardList, Search, Eye, Plus, Loader2, AlertTriangle, CheckCircle,
   TrendingUp, Save, Pencil, Upload, ChevronDown, ChevronLeft, Phone,
-  Sparkles, FileSpreadsheet,
+  Sparkles, FileSpreadsheet, Printer,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -15,6 +15,9 @@ import AddCustomerModal from '../../components/AddCustomerModal';
 import CustomerFullEditPage from '../../components/CustomerFullEditPage';
 import DeviceModal from '../../components/DeviceModal';
 import ContractModal from '../../components/ContractModal';
+import CustomerStatusBadge from '../../components/CustomerStatusBadge';
+import DeviceCatalogue from '../../components/DeviceCatalogue';
+import InventoryItemCard, { type InventoryItem as StockItem } from '../../components/InventoryItemCard';
 import Customer360Panel from '../../components/Customer360Panel';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import ScheduleVisitModal from '../../components/ScheduleVisitModal';
@@ -31,6 +34,7 @@ import {
   waitingFor,
 } from '../../lib/statusMeta';
 import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
+import { type CustomerStatus } from '../../lib/statusMeta';
 import { fmtDate, whatsAppLink } from '../../lib/format';
 import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
 import { confirmAppointment, dismissServiceRequest, markInvoicePaid, setInventoryQuantity } from '../../lib/operations';
@@ -72,6 +76,7 @@ interface InvoiceRow {
 interface ContractRow {
   id: string; customer_id: string; plan_type: string; visits_included: number; visits_used: number;
   price_jod: number; start_date: string; end_date: string; auto_renew: boolean; status: string;
+  contract_number: string | null; filter_category: 'home' | 'industrial' | null;
   customers: { name: string } | null;
 }
 
@@ -146,6 +151,9 @@ export default function ManagerDashboard() {
   /** Registered with no visit and no offer — the follow-up never happened. */
   const [awaitingActionIds, setAwaitingActionIds] = useState<Set<string>>(new Set());
   const [openOffers, setOpenOffers] = useState<Record<string, OpenOffer>>({});
+  const [customerStatuses, setCustomerStatuses] = useState<Record<string, CustomerStatus>>({});
+  const [inventoryCard, setInventoryCard] = useState<StockItem | null>(null);
+  const [deviceReload, setDeviceReload] = useState(0);
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -164,13 +172,12 @@ export default function ManagerDashboard() {
   const [markingPaid, setMarkingPaid] = useState<string | null>(null);
 
   const [contracts, setContracts] = useState<ContractRow[]>([]);
-  const [contractModal, setContractModal] = useState<{ contract?: ContractRow } | null>(null);
+  const [contractModal, setContractModal] = useState<{ contract?: ContractRow; print?: boolean } | null>(null);
   const [openApptId, setOpenApptId] = useState<string | null>(null);
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
   const [requestFilter, setRequestFilter] = useState<'all' | 'pending' | 'scheduled' | 'dismissed'>('all');
   const [scheduleFromRequest, setScheduleFromRequest] = useState<RequestRow | null>(null);
 
-  const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [showAddDevice, setShowAddDevice] = useState(false);
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -265,7 +272,8 @@ export default function ManagerDashboard() {
       .select('technician_id, status, confirmed, scheduled_at, customers(name)')
       .not('technician_id', 'is', null)
       .gte('scheduled_at', monthStart)
-      .order('scheduled_at');
+      /* Newest visit first, so today's work is at the top of the list. */
+      .order('scheduled_at', { ascending: false });
 
     const map: Record<string, {
       today: number; inProgress: number; completedMonth: number; unconfirmed: number;
@@ -294,13 +302,15 @@ export default function ManagerDashboard() {
   }
 
   async function loadCustomers() {
-    const { data } = await supabase.from('customers').select('*').order('name');
+    /* Newest customer first — the one just registered is the one being worked on. */
+    const { data } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
     const rows = (data ?? []) as Customer[];
     setCustomers(rows);
 
-    const { awaiting, offers } = await loadCustomerActionState(rows);
+    const { awaiting, offers, statuses } = await loadCustomerActionState(rows);
     setAwaitingActionIds(awaiting);
     setOpenOffers(offers);
+    setCustomerStatuses(statuses);
   }
 
   async function loadAppointments() {
@@ -341,21 +351,10 @@ export default function ManagerDashboard() {
   async function loadContracts() {
     const { data } = await supabase
       .from('contracts')
-      .select('id, customer_id, plan_type, visits_included, visits_used, price_jod, start_date, end_date, auto_renew, status, customers(name)')
+      .select('id, customer_id, contract_number, filter_category, plan_type, visits_included, visits_used, price_jod, start_date, end_date, auto_renew, status, customers(name)')
       .order('end_date', { ascending: true });
     setContracts(((data ?? []) as Record<string, unknown>[]).map(r => ({
       ...(r as unknown as ContractRow),
-      customers: one(r.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string } | null,
-    })));
-  }
-
-  async function loadDevices() {
-    const { data } = await supabase
-      .from('customer_devices')
-      .select('id, customer_id, device_brand, device_model, serial_number, installation_date, warranty_expires, location_in_premises, customers(name)')
-      .order('installation_date', { ascending: false });
-    setDevices(((data ?? []) as Record<string, unknown>[]).map(r => ({
-      ...(r as unknown as DeviceRow),
       customers: one(r.customers as Record<string, unknown>[] | Record<string, unknown> | null) as { name: string } | null,
     })));
   }
@@ -416,7 +415,6 @@ export default function ManagerDashboard() {
       appointments: loadAppointments,
       invoices: loadInvoices,
       contracts: loadContracts,
-      devices: loadDevices,
       inventory: loadInventory,
       requests: loadRequests,
       team: loadTeam,
@@ -700,6 +698,7 @@ export default function ManagerDashboard() {
                             {openOffers[c.id].quote_number}
                           </span>
                         )}
+                        <CustomerStatusBadge status={customerStatuses[c.id]} small />
                       </div>
                       <p className="text-xs text-slate-500" dir="ltr">{c.phone}</p>
                     </div>
@@ -929,7 +928,15 @@ export default function ManagerDashboard() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <p className="font-semibold text-slate-900 text-sm">{c.customers?.name ?? '—'}</p>
+                          {c.contract_number && (
+                            <span className="text-[10px] font-bold text-navy bg-navy/5 px-1.5 py-0.5 rounded-md" dir="ltr">
+                              {c.contract_number}
+                            </span>
+                          )}
                           <span className="text-[11px] text-slate-500">{t(`contract.plan_${c.plan_type}`, c.plan_type)}</span>
+                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md">
+                            {t(`device.usage_${c.filter_category ?? 'home'}`)}
+                          </span>
                           <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold ${TONE_CLASS[h.tone]}`}>
                             {t(`contract.state_${h.state}`)}
                           </span>
@@ -968,6 +975,13 @@ export default function ManagerDashboard() {
                           </span>
                         )}
                         <button
+                          onClick={() => setContractModal({ contract: c, print: true })}
+                          title={t('contract.print')}
+                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                           onClick={() => setContractModal({ contract: c })}
                           title={t('common.edit')}
                           className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition"
@@ -985,35 +999,12 @@ export default function ManagerDashboard() {
 
         {/* ── DEVICES ── */}
         {tab === 'devices' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-end">
-              <button
-                onClick={() => setShowAddDevice(true)}
-                className="flex items-center gap-1.5 bg-navy hover:bg-navy-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition"
-              >
-                <Plus className="w-3.5 h-3.5" /> {t('manager.newDevice')}
-              </button>
-            </div>
-            <div className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
-              {devices.length === 0 ? (
-                <p className="text-center text-slate-400 text-sm py-10">{t('common.noData')}</p>
-              ) : devices.map(d => (
-                <div key={d.id} className="flex items-center justify-between gap-3 px-5 py-3.5 flex-wrap">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 text-sm">{d.customers?.name ?? '—'} <span className="text-slate-400 font-normal">· {d.device_brand}</span></p>
-                    <p className="text-xs text-slate-500">{d.serial_number ? `S/N ${d.serial_number} · ` : ''}{t('customer360.installDate')}: {fmtDate(d.installation_date)} · {t('customer360.warrantyExpires')}: {fmtDate(d.warranty_expires)}</p>
-                  </div>
-                  <button
-                    onClick={() => setEditDevice(d)}
-                    title={t('common.edit')}
-                    className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-navy/10 flex items-center justify-center text-slate-500 hover:text-navy transition shrink-0"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <DeviceCatalogue
+            reloadToken={deviceReload}
+            onAdd={() => setShowAddDevice(true)}
+            onEdit={device => setEditDevice(device as typeof editDevice)}
+            onOpenCustomer={id => setSelectedCustomerId(id)}
+          />
         )}
 
         {/* ── INVENTORY ── */}
@@ -1042,12 +1033,21 @@ export default function ManagerDashboard() {
                         </button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => { setEditingInvId(i.id); setEditingInvQty(i.quantity); }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${i.quantity < i.low_stock_threshold ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}
-                      >
-                        {i.quantity} {i.unit}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => { setEditingInvId(i.id); setEditingInvQty(i.quantity); }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${i.quantity < i.low_stock_threshold ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}
+                        >
+                          {i.quantity} {i.unit}
+                        </button>
+                        <button
+                          onClick={() => setInventoryCard(i)}
+                          title={t('inventoryCard.open')}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-navy/10 text-slate-600 hover:text-navy transition"
+                        >
+                          {t('inventoryCard.open')}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1360,16 +1360,24 @@ export default function ManagerDashboard() {
         onSaved={() => { loadCustomers(); }}
       />
     )}
+    {inventoryCard && (
+      <InventoryItemCard
+        item={inventoryCard}
+        onClose={() => setInventoryCard(null)}
+        onChanged={() => loadInventory()}
+      />
+    )}
     {editDevice && (
       <DeviceModal
         device={editDevice}
         onClose={() => setEditDevice(null)}
-        onSaved={() => { loadDevices(); }}
+        onSaved={() => setDeviceReload(v => v + 1)}
       />
     )}
     {contractModal && (
       <ContractModal
         contract={contractModal.contract}
+        autoPrint={contractModal.print}
         customers={customers}
         onClose={() => setContractModal(null)}
         onSaved={() => { loadContracts(); loadOverview(); }}
@@ -1415,7 +1423,7 @@ export default function ManagerDashboard() {
       <DeviceModal
         customers={customers}
         onClose={() => setShowAddDevice(false)}
-        onSaved={() => loadDevices()}
+        onSaved={() => setDeviceReload(v => v + 1)}
       />
     )}
     </>

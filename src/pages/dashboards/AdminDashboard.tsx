@@ -22,6 +22,12 @@ import CustomerNextStep from '../../components/CustomerNextStep';
 import VisitTypeBadge from '../../components/VisitTypeBadge';
 import { TRIGGER_TO_VISIT_TYPE, type VisitType } from '../../lib/visitFields';
 import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
+import { type CustomerStatus } from '../../lib/statusMeta';
+import CustomerStatusBadge from '../../components/CustomerStatusBadge';
+import DeviceCatalogue from '../../components/DeviceCatalogue';
+import ContractModal, { type ContractRecord } from '../../components/ContractModal';
+import DeviceModal from '../../components/DeviceModal';
+import InventoryItemCard, { type InventoryItem } from '../../components/InventoryItemCard';
 import { downloadCsv, whatsAppLink } from '../../lib/format';
 import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
 import { confirmAppointment, dismissServiceRequest, markInvoicePaid, setInventoryQuantity } from '../../lib/operations';
@@ -58,14 +64,7 @@ interface Customer {
   contract_type: string | null;
   warranty_expires: string | null;
   device_install_date: string | null;
-}
-
-interface InventoryItem {
-  id: string;
-  part_name: string;
-  quantity: number;
-  unit: string;
-  low_stock_threshold: number;
+  created_at?: string | null;
 }
 
 interface Appointment {
@@ -170,6 +169,12 @@ export default function AdminDashboard() {
   const [awaitingActionIds, setAwaitingActionIds] = useState<Set<string>>(new Set());
   /** Offers already sent and still waiting on the customer's word. */
   const [openOffers, setOpenOffers] = useState<Record<string, OpenOffer>>({});
+  const [customerStatuses, setCustomerStatuses] = useState<Record<string, CustomerStatus>>({});
+  /* Inventory card + device catalogue live alongside the lists they open from. */
+  const [inventoryCard, setInventoryCard] = useState<InventoryItem | null>(null);
+  const [deviceEdit, setDeviceEdit] = useState<import('../../lib/deviceFields').DeviceRecord | null>(null);
+  const [addingDevice, setAddingDevice] = useState(false);
+  const [deviceReload, setDeviceReload] = useState(0);
 
   // Inventory inline editing
   const [editingInventoryId, setEditingInventoryId]   = useState<string | null>(null);
@@ -201,11 +206,11 @@ export default function AdminDashboard() {
   // ── Enhancement state ───────────────────────────────────────────────────────
   const [highlightedApptId, setHighlightedApptId]   = useState<string | null>(null);
   const [techFilterId, setTechFilterId]             = useState<string | null>(null);
-  const [custSortBy, setCustSortBy]                 = useState<'name' | 'last_service' | 'next_appointment' | 'urgency'>('name');
-  const [custSortDir, setCustSortDir]               = useState<'asc' | 'desc'>('asc');
+  const [custSortBy, setCustSortBy]                 = useState<'newest' | 'name' | 'last_service' | 'next_appointment' | 'urgency'>('newest');
+  const [custSortDir, setCustSortDir]               = useState<'asc' | 'desc'>('desc');
   const [collapsedUrgencies, setCollapsedUrgencies] = useState<Set<string>>(new Set());
   const [techJobCounts, setTechJobCounts]           = useState<Record<string, number>>({});
-  const [adminTab, setAdminTab]                     = useState<'schedule' | 'customers' | 'service_requests' | 'inventory' | 'invoices'>('schedule');
+  const [adminTab, setAdminTab]                     = useState<'schedule' | 'customers' | 'devices' | 'service_requests' | 'inventory' | 'invoices'>('schedule');
   const [techInProgressSet, setTechInProgressSet]   = useState<Set<string>>(new Set());
 
   // Invoice panel state
@@ -234,7 +239,8 @@ export default function AdminDashboard() {
   }
   const [devicesModal, setDevicesModal] = useState<{ custId: string; custName: string; list: AdminDevice[] } | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);
-  const [expiringContracts, setExpiringContracts] = useState<{ id: string; customer_name: string; end_date: string; plan_type: string }[]>([]);
+  const [expiringContracts, setExpiringContracts] = useState<(ContractRecord & { customer_name: string })[]>([]);
+  const [contractModal, setContractModal] = useState<{ contract?: ContractRecord; print?: boolean } | null>(null);
 
   // ── Appointment detail modal ─────────────────────────────────────────────
   interface ApptDetailState { appt: Appointment; rescheduleDate: string; reassignTechId: string; submitting: boolean; }
@@ -329,7 +335,8 @@ export default function AdminDashboard() {
     let q = supabase
       .from('appointments')
       .select('id, service_type, visit_type, device_id, confirmed, confirmed_at, scheduled_at, status, address, notes, approval_notes, customer_id, technician_id, customers(name, address, phone), device:customer_devices(device_brand, device_model, serial_number, location_in_premises, warranty_expires)')
-      .order('scheduled_at')
+      /* Newest visit first — the office reads its list from the top. */
+      .order('scheduled_at', { ascending: false })
       .limit(200);
     if (range === 'all') {
       // no date filter — return everything
@@ -544,9 +551,10 @@ export default function AdminDashboard() {
    * mark them so the office can pick the thread back up.
    */
   const refreshActionState = useCallback(async (customerRows: Customer[]) => {
-    const { awaiting, offers } = await loadCustomerActionState(customerRows);
+    const { awaiting, offers, statuses } = await loadCustomerActionState(customerRows);
     setAwaitingActionIds(awaiting);
     setOpenOffers(offers);
+    setCustomerStatuses(statuses);
   }, []);
 
   async function confirmVisit(appt: Appointment, channel = 'phone') {
@@ -681,7 +689,7 @@ export default function AdminDashboard() {
     const in30  = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
     const { data } = await supabase
       .from('contracts')
-      .select('id, plan_type, end_date, customers(name)')
+      .select('id, customer_id, contract_number, filter_category, plan_type, visits_included, visits_used, price_jod, start_date, end_date, auto_renew, status, customers(name)')
       .eq('status', 'active')
       .gte('end_date', today)
       .lte('end_date', in30)
@@ -691,7 +699,7 @@ export default function AdminDashboard() {
         const cust = Array.isArray(r.customers)
           ? (r.customers as { name: string }[])[0]?.name ?? '-'
           : (r.customers as { name: string } | null)?.name ?? '-';
-        return { id: r.id as string, customer_name: cust, end_date: r.end_date as string, plan_type: r.plan_type as string };
+        return { ...(r as unknown as ContractRecord), customer_name: cust };
       }));
     }
   }
@@ -771,8 +779,11 @@ export default function AdminDashboard() {
           (c.next_appointment && new Date(c.next_appointment) < now) ? 2 : 3;
         return dir * (score(a) - score(b));
       }
-      default:
+      case 'name':
         return dir * a.name.localeCompare(b.name);
+      default:
+        /* Newest customer first: the one just registered is the one being worked on. */
+        return dir * ((a.created_at ?? '').localeCompare(b.created_at ?? ''));
     }
   });
 
@@ -983,11 +994,15 @@ export default function AdminDashboard() {
             </div>
             <div className="flex flex-wrap gap-2">
               {expiringContracts.map(c => (
-                <span key={c.id} className="inline-flex items-center gap-1.5 bg-white border border-amber-200 text-amber-800 text-xs font-medium px-3 py-1.5 rounded-lg">
+                <button
+                  key={c.id}
+                  onClick={() => setContractModal({ contract: c })}
+                  className="inline-flex items-center gap-1.5 bg-white border border-amber-200 hover:border-amber-400 text-amber-800 text-xs font-medium px-3 py-1.5 rounded-lg transition"
+                >
                   {c.customer_name}
                   <span className="text-amber-400">·</span>
                   {new Date(c.end_date).toLocaleDateString('en-GB')}
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -1029,12 +1044,13 @@ export default function AdminDashboard() {
 
         {/* ── Tab Bar ── */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 mb-6">
-          {(['schedule', 'customers', 'service_requests', 'inventory', 'invoices'] as const).map(tab => {
+          {(['schedule', 'customers', 'devices', 'service_requests', 'inventory', 'invoices'] as const).map(tab => {
             const lowStockCount = inventory.filter(i => i.quantity < 5).length;
             const srCount       = serviceRequests.length;
             const tabLabels: Record<string, string> = {
               schedule:         'Schedule',
               customers:        t('admin.customerList'),
+              devices:          t('device.screenTitle'),
               service_requests: t('serviceRequests.title'),
               inventory:        t('admin.inventoryList'),
               invoices:         t('invoice.allInvoices'),
@@ -1211,7 +1227,7 @@ export default function AdminDashboard() {
                       );
                     }) : (
                       <tr>
-                        <td colSpan={6} className="px-6 py-8 text-center text-slate-400">{t('common.noData')}</td>
+                        <td colSpan={7} className="px-6 py-8 text-center text-slate-400">{t('common.noData')}</td>
                       </tr>
                     )}
                   </tbody>
@@ -1240,9 +1256,17 @@ export default function AdminDashboard() {
                         className="ps-9 pe-4 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-orange-500 w-40"
                       />
                     </div>
+                    <button
+                      onClick={() => setContractModal({})}
+                      className="flex items-center gap-1.5 bg-navy hover:bg-navy/90 text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap"
+                    >
+                      <FileText className="w-3 h-3" /> {t('contract.newTitle')}
+                    </button>
+
                     {/* Sort controls */}
                     <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
                       {([
+                        { key: 'newest',           label: t('admin.sortNewest') },
                         { key: 'name',             label: 'Name'    },
                         { key: 'last_service',      label: 'Last'    },
                         { key: 'next_appointment',  label: 'Next'    },
@@ -1252,7 +1276,7 @@ export default function AdminDashboard() {
                           key={opt.key}
                           onClick={() => {
                             if (custSortBy === opt.key) setCustSortDir(d => d === 'asc' ? 'desc' : 'asc');
-                            else { setCustSortBy(opt.key); setCustSortDir('asc'); }
+                            else { setCustSortBy(opt.key); setCustSortDir(opt.key === 'newest' ? 'desc' : 'asc'); }
                           }}
                           className={`flex items-center gap-0.5 px-2 py-1 rounded-md text-[10px] font-semibold transition whitespace-nowrap ${custSortBy === opt.key ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
                         >
@@ -1305,6 +1329,7 @@ export default function AdminDashboard() {
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/50">
                       <th className="text-start px-6 py-3 text-xs font-semibold text-slate-500">{t('admin.customerName')}</th>
+                      <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('common.status')}</th>
                       <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('admin.phone')}</th>
                       <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('admin.lastService')}</th>
                       <th className="text-start px-4 py-3 text-xs font-semibold text-slate-500">{t('admin.nextAppointment')}</th>
@@ -1315,7 +1340,7 @@ export default function AdminDashboard() {
                   <tbody className="divide-y divide-slate-50">
                     {sortedCustomers.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-6 py-8 text-center text-slate-400">{t('common.noData')}</td>
+                        <td colSpan={7} className="px-6 py-8 text-center text-slate-400">{t('common.noData')}</td>
                       </tr>
                     ) : sortedCustomers.map(cust => {
                       const noHistory = !cust.last_service_date;
@@ -1359,6 +1384,9 @@ export default function AdminDashboard() {
                                 {isDueSoon   && <span title={t('serviceRequests.flagDueSoon')}   className="text-sm leading-none">🟡</span>}
                               </div>
                             </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <CustomerStatusBadge status={customerStatuses[cust.id]} />
                           </td>
                           <td className="px-4 py-3 text-slate-600 text-xs font-mono" dir="ltr">{cust.phone}</td>
                           <td className="px-4 py-3 text-slate-500 text-xs">{cust.last_service_date ?? '-'}</td>
@@ -1428,6 +1456,14 @@ export default function AdminDashboard() {
             )}
 
             {/* ── Inventory Tab ── */}
+            {adminTab === 'devices' && (
+              <DeviceCatalogue
+                reloadToken={deviceReload}
+                onAdd={() => setAddingDevice(true)}
+                onEdit={device => setDeviceEdit(device)}
+              />
+            )}
+
             {adminTab === 'inventory' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -1487,16 +1523,25 @@ export default function AdminDashboard() {
                         )}
                       </div>
                       {!isEditing && (
-                        isLow ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-red-100 text-red-700 shrink-0">
-                            <AlertTriangle className="w-3 h-3" />
-                            {t('inventory.lowStock')}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-green-100 text-green-700 shrink-0">
-                            {t('inventory.inStock')}
-                          </span>
-                        )
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isLow ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-red-100 text-red-700">
+                              <AlertTriangle className="w-3 h-3" />
+                              {t('inventory.lowStock')}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-green-100 text-green-700">
+                              {t('inventory.inStock')}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => setInventoryCard(item)}
+                            title={t('inventoryCard.open')}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-navy/10 text-slate-600 hover:text-navy transition"
+                          >
+                            {t('inventoryCard.open')}
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -2154,6 +2199,36 @@ export default function AdminDashboard() {
       <AddTechnicianModal
         onClose={() => setShowAddTechnician(false)}
         onCreated={() => { loadData(); loadTechnicians(); }}
+      />
+    )}
+
+    {/* ── Contract: create, edit and the signable printed copy ── */}
+    {contractModal && (
+      <ContractModal
+        contract={contractModal.contract}
+        autoPrint={contractModal.print}
+        customers={customers.map(c => ({ id: c.id, name: c.name }))}
+        onClose={() => setContractModal(null)}
+        onSaved={() => { loadData(); loadExpiringContracts(); }}
+      />
+    )}
+
+    {/* ── Stock card: branches, last fill, expiry and every movement ── */}
+    {inventoryCard && (
+      <InventoryItemCard
+        item={inventoryCard}
+        onClose={() => setInventoryCard(null)}
+        onChanged={() => { loadData(); }}
+      />
+    )}
+
+    {/* ── Device register / edit, opened from the device catalogue ── */}
+    {(addingDevice || deviceEdit) && (
+      <DeviceModal
+        device={deviceEdit}
+        customers={addingDevice ? customers.map(c => ({ id: c.id, name: c.name })) : undefined}
+        onClose={() => { setAddingDevice(false); setDeviceEdit(null); }}
+        onSaved={() => { setDeviceReload(v => v + 1); loadData(); }}
       />
     )}
     </>
