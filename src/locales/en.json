@@ -69,7 +69,12 @@
     "confirm": "Confirm",
     "back": "Back",
     "export": "Export",
-    "close": "Close"
+    "close": "Close",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "notes": "Notes",
+    "error": "Something went wrong"
   },
   "status": {
     "pending": "Pending",
@@ -93,7 +98,11 @@
     "quantity": "Quantity",
     "unit": "Unit",
     "stockStatus": "Stock Status",
-    "inStock": "In Stock"
+    "inStock": "In Stock",
+    "category_part": "Part",
+    "category_device": "Device",
+    "category_accessory": "Accessory",
+    "category_service": "Service"
   },
   "notifications": {
     "title": "Notifications",
@@ -258,7 +267,8 @@
     "awaitingActionBadge": "No action yet",
     "nextStep": "Next step",
     "awaitingActionTitle": "{{count}} customers with no next step yet",
-    "emailLabel": "Email"
+    "emailLabel": "Email",
+    "sortNewest": "Newest"
   },
   "technician": {
     "hey": "Hey",
@@ -473,7 +483,9 @@
     "noPartsUsed": "No parts used",
     "invoices": "Invoices",
     "serviceRequests": "Service Requests",
-    "notificationsSent": "Notifications Sent"
+    "notificationsSent": "Notifications Sent",
+    "lastOffer": "Last price offer",
+    "noOffers": "No price offer has been sent to this customer yet"
   },
   "invoice": {
     "title": "Invoice",
@@ -895,7 +907,13 @@
     "decline": "Customer declined the offer",
     "approvedToast": "Offer {{number}} marked as accepted",
     "declinedToast": "Offer {{number}} marked as declined",
-    "viewPrint": "View / print the offer"
+    "viewPrint": "View / print the offer",
+    "viewOffer": "View / print offer",
+    "status_draft": "Draft",
+    "status_sent": "Sent",
+    "status_accepted": "Accepted",
+    "status_declined": "Declined",
+    "status_expired": "Expired"
   },
   "firstLogin": {
     "title": "Choose your password",
@@ -1040,7 +1058,26 @@
     "needsAttention": "Contracts that need attention",
     "daysLeft": "{{count}} days left",
     "visitsProgress": "{{used}} of {{total}} visits used",
-    "remainingCount": "{{count}} left"
+    "remainingCount": "{{count}} left",
+    "filterCategory": "Filter class",
+    "filterCategoryHint": "Home or industrial — it decides the filters fitted and the visit interval.",
+    "coveredDevices": "Devices covered",
+    "coveredDevicesHint": "Untick anything this contract does not cover. Each device carries its own filter class.",
+    "pickCustomerFirst": "Choose the customer to see their registered devices.",
+    "noDevicesRegistered": "This customer has no registered devices yet. The contract can still be issued — register the device when it is installed.",
+    "noDevicesOnContract": "No specific device listed — this contract covers the customer's installation as a whole.",
+    "status_new": "New",
+    "statusNewHint": "First contract for this customer.",
+    "createAndPrint": "Create & print",
+    "print": "Print contract",
+    "printedOn": "Printed on",
+    "firstParty": "First Party",
+    "firstPartyRole": "The Company — service provider",
+    "secondParty": "Second Party",
+    "secondPartyRole": "The Customer",
+    "termsTitle": "Terms and conditions",
+    "termsVersion": "Terms version {{version}}",
+    "signatureLine": "Name, signature & date"
   },
   "team": {
     "onJob": "On a job",
@@ -1080,5 +1117,82 @@
     "emailHint": "The customer signs in with this address.",
     "needEmail": "An email address is required",
     "passwordReplaced": "This replaces the customer’s previous password. Hand over the link when you can — the password is the fallback."
+  },
+  "customerStatus": {
+    "new": "New",
+    "offerSent": "Offer sent",
+    "scheduled": "Visit booked",
+    "underContract": "Under contract",
+    "contractExpiring": "Contract ending",
+    "contractExpired": "Contract expired",
+    "served": "Served",
+    "dormant": "Dormant",
+    "hint_new": "Registered, but nothing has happened yet — no offer, no visit.",
+    "hint_offerSent": "A price offer is with them and has not been answered.",
+    "hint_scheduled": "A visit is booked but none has been completed yet.",
+    "hint_underContract": "A live maintenance contract is running.",
+    "hint_contractExpiring": "Their contract ends within 30 days — time to renew.",
+    "hint_contractExpired": "The contract ran out and was not renewed.",
+    "hint_served": "Visits have been done, without a running contract.",
+    "hint_dormant": "Nothing has happened for over a year."
+  },
+  "device": {
+    "screenTitle": "Devices",
+    "usageType": "Usage type",
+    "usage_home": "Home use",
+    "usage_industrial": "Industrial use",
+    "usageHint_home": "Households, flats and offices",
+    "usageHint_industrial": "Factories, restaurants and large premises",
+    "searchPlaceholder": "Search by model, customer or serial number",
+    "unitsInstalled": "{{count}} installed",
+    "customersWith": "{{count}} customers",
+    "noneInstalled": "Nothing installed yet — this model is priced in the catalogue only."
+  },
+  "inventoryCard": {
+    "open": "Item card",
+    "onHand": "On hand",
+    "totalIn": "Total in",
+    "totalOut": "Total out",
+    "costSelling": "Cost / selling",
+    "lowStock": "Below the reorder level of {{threshold}}",
+    "hasExpired": "A received batch has passed its expiry date",
+    "byBranch": "Stock by branch",
+    "branch": "Branch",
+    "quantity": "Quantity",
+    "lastFilled": "Last filled",
+    "expiry": "Expiry",
+    "noExpiry": "Not applicable",
+    "lastEntry": "Last entry",
+    "lastIssue": "Last issued",
+    "by": "By",
+    "from": "From",
+    "to": "To",
+    "fromPlaceholder": "Supplier name",
+    "toPlaceholder": "Technician, job or customer",
+    "reference": "Reference",
+    "referencePlaceholder": "Invoice or order number",
+    "batch": "Batch",
+    "ifApplicable": "(if applicable)",
+    "movements": "Movements",
+    "movement": "Movement",
+    "date": "Date",
+    "party": "From / to",
+    "reason": "Reason",
+    "noMovements": "No movements recorded yet",
+    "recordMovement": "Record a movement",
+    "book": "Save movement",
+    "movementSaved": "Movement recorded",
+    "errBranch": "Choose a branch",
+    "errQuantity": "Quantity must be at least 1",
+    "direction_in": "Stock in",
+    "direction_out": "Stock out",
+    "reason_opening": "Opening balance",
+    "reason_purchase": "Purchase",
+    "reason_return": "Return",
+    "reason_transfer": "Transfer",
+    "reason_issue": "Issued",
+    "reason_consumption": "Used on a job",
+    "reason_damage": "Damaged",
+    "reason_adjustment": "Adjustment"
   }
 }

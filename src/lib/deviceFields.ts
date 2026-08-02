@@ -17,6 +17,20 @@ export const DEVICE_BRANDS = [
 /** Warranty options offered at install time, in months. */
 export const WARRANTY_MONTHS = [12, 24, 36];
 
+/**
+ * What the device is fitted to serve. The same brand goes into a flat and into
+ * a plant, but not with the same filters, the same interval or the same price —
+ * so every device, and every contract covering one, states which it is.
+ */
+export type UsageType = 'home' | 'industrial';
+
+export const USAGE_TYPES: UsageType[] = ['home', 'industrial'];
+
+export const USAGE_TONE: Record<UsageType, string> = {
+  home: 'bg-sky-50 text-sky-700 border-sky-200',
+  industrial: 'bg-amber-50 text-amber-800 border-amber-200',
+};
+
 export interface DeviceRecord {
   id: string;
   customer_id?: string;
@@ -26,4 +40,5 @@ export interface DeviceRecord {
   installation_date: string | null;
   warranty_expires: string | null;
   location_in_premises: string | null;
+  usage_type?: UsageType;
 }

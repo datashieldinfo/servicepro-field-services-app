@@ -150,6 +150,66 @@ export function contractHealth(contract: {
   return { state: 'active', tone: 'success', remaining, daysLeft, alert: false };
 }
 
+/* ── Customers ───────────────────────────────────────────────────────────── */
+
+export type CustomerState =
+  | 'new'              // registered, nothing has happened yet
+  | 'offerSent'        // an offer is with them, waiting on a yes or no
+  | 'scheduled'        // a visit is booked but none has been completed
+  | 'underContract'    // a live maintenance contract
+  | 'contractExpiring' // live contract, ending within a month
+  | 'contractExpired'  // the contract ran out and was not renewed
+  | 'served'           // visits happened, no contract — a normal paying customer
+  | 'dormant';         // nothing for a year
+
+export interface CustomerStatus {
+  state: CustomerState;
+  tone: Tone;
+  /** Worth chasing: the office should do something about this one. */
+  alert: boolean;
+}
+
+export interface CustomerSignals {
+  /** Newest contract, whatever its state. */
+  contract?: { status: string; end_date: string } | null;
+  /** Has an offer nobody has answered. */
+  openOffer?: boolean;
+  /** ISO date of the most recent completed visit. */
+  lastVisitAt?: string | null;
+  /** ISO date of the next visit still to happen. */
+  nextVisitAt?: string | null;
+}
+
+const YEAR_MS = 365 * 86_400_000;
+
+/**
+ * Where a customer stands with us, from the traces they leave: a contract, an
+ * open offer, visits done and visits booked. Read top to bottom — the first
+ * thing that is true wins, so a live contract outranks an old visit.
+ */
+export function customerStatus(signals: CustomerSignals): CustomerStatus {
+  const { contract, openOffer, lastVisitAt, nextVisitAt } = signals;
+
+  if (contract && contract.status !== 'cancelled') {
+    const daysLeft = Math.ceil((new Date(contract.end_date).getTime() - Date.now()) / 86_400_000);
+    if (daysLeft < 0)   return { state: 'contractExpired',  tone: 'danger',  alert: true };
+    if (daysLeft <= 30) return { state: 'contractExpiring', tone: 'warning', alert: true };
+    return { state: 'underContract', tone: 'success', alert: false };
+  }
+
+  if (openOffer) return { state: 'offerSent', tone: 'warning', alert: true };
+
+  if (lastVisitAt) {
+    const since = Date.now() - new Date(lastVisitAt).getTime();
+    if (since > YEAR_MS) return { state: 'dormant', tone: 'muted', alert: true };
+    return { state: 'served', tone: 'info', alert: false };
+  }
+
+  if (nextVisitAt) return { state: 'scheduled', tone: 'info', alert: false };
+
+  return { state: 'new', tone: 'neutral', alert: true };
+}
+
 /* ── Contract plans ──────────────────────────────────────────────────────── */
 
 export interface PlanDef {
