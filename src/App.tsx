@@ -4,6 +4,7 @@ import { ToastProvider } from './components/Toast';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import LoginPage from './pages/LoginPage';
+import GetAppPage from './pages/GetAppPage';
 import NotFoundPage from './pages/NotFoundPage';
 import OwnerDashboard from './pages/dashboards/OwnerDashboard';
 import TechnicianDashboard from './pages/dashboards/TechnicianDashboard';
@@ -34,6 +35,10 @@ export default function App() {
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<LoginPage />} />
+            {/* the install page is public — it is what a new phone opens first */}
+            <Route path="/download" element={<GetAppPage />} />
+            <Route path="/install" element={<Navigate to="/download" replace />} />
+            <Route path="/app" element={<Navigate to="/download" replace />} />
             <Route
               path="/dashboard/owner"
               element={

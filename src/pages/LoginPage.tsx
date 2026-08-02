@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Zap, Globe } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, Zap, Globe, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toggleLanguage } from '../lib/language';
 import { supabase, UserRole } from '../lib/supabase';
@@ -298,6 +298,14 @@ export default function LoginPage() {
             ))}
           </div>
 
+          {/* Install the app on this device */}
+          <Link
+            to="/download"
+            className="mt-6 flex items-center justify-center gap-2 w-full rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-navy text-xs font-semibold py-2.5 transition"
+          >
+            <Download className="w-3.5 h-3.5" />
+            {t('getApp.loginLink')}
+          </Link>
         </div>
       </div>
 

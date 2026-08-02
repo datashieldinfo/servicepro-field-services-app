@@ -1,8 +1,9 @@
-import { LogOut, Globe, Search } from 'lucide-react';
+import { LogOut, Globe, Search, Download } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toggleLanguage } from '../lib/language';
+import { isStandalone } from '../lib/pwa';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../lib/supabase';
 import Logo from './Logo';
@@ -24,6 +25,8 @@ export default function Navbar() {
   const config = ROLE_CONFIG[role];
   const isAr = i18n.language === 'ar';
   const [searchOpen, setSearchOpen] = useState(false);
+  // nothing to install when the app is already running from the home screen
+  const [installed] = useState(isStandalone);
 
   async function handleSignOut() {
     await signOut();
@@ -62,6 +65,17 @@ export default function Navbar() {
             >
               <Search className="w-4 h-4" />
             </button>
+
+            {/* Install the app */}
+            {!installed && (
+              <button
+                onClick={() => navigate('/download')}
+                title={t('nav.getApp')}
+                className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-navy hover:text-white flex items-center justify-center text-slate-500 transition"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Language toggle */}
             <button

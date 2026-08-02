@@ -172,6 +172,35 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
   offer, the quotation is marked accepted with `converted_appointment_id`.
 - **`ScheduleVisitModal`** — the general scheduler for every other visit type.
 
+### Installable app (Android / iOS / Windows / macOS)
+
+There is no native build and no app-store listing — the same deployed web app installs itself on
+every platform as a PWA, so one URL covers phones, tablets and desktops.
+
+- **`public/manifest.webmanifest`** — name, `standalone` display, navy theme, and the icon set.
+  Linked from `index.html` alongside the Apple meta tags iOS needs (`apple-touch-icon`,
+  `apple-mobile-web-app-*`).
+- **`public/sw.js`** — the service worker that makes the app installable and keeps the shell
+  openable without signal: network-first for page loads (falling back to the cached shell and then
+  `public/offline.html`), cache-first for hashed `/assets/*` and Google Fonts, and **nothing from
+  Supabase is ever cached**. Bump `CACHE_VERSION` when the rules change; stale caches are dropped on
+  activate.
+- **`public/_headers`** — Netlify caching: `sw.js`, `manifest.webmanifest` and `index.html` must
+  revalidate, hashed assets are immutable.
+- **`public/icons/*.png`** — committed app icons (192/512, plus maskable and Apple variants),
+  regenerated with `python3 scripts/generate-icons.py` (needs Pillow) when the brand mark changes.
+- **`src/lib/pwa.ts`** — `initPwa()` (called once from `main.tsx`) registers the worker in
+  production only and captures Chromium's `beforeinstallprompt`, which fires long before the user
+  reaches the install screen. Also `detectPlatform()`, `detectBrowser()`, `isStandalone()`,
+  `canInstallDirectly()`, `promptInstall()`, `onInstallStateChange()`.
+- **`GetAppPage`** (`/download`, with `/install` and `/app` redirecting to it) — public page: a
+  one-tap install button where the browser supports it, per-platform steps otherwise (the detected
+  device's card first), and copy / WhatsApp / email sharing of the install link for technicians and
+  customers. Reached from the login page and from the `Navbar` download button, both hidden once the
+  app already runs standalone.
+- iOS never exposes `beforeinstallprompt`: on iPhone/iPad the page tells the user to open it in
+  Safari and use Share → Add to Home Screen.
+
 ### Internationalization
 
 - `src/i18n/index.ts` initialises i18next with `ar` (default) and `en` locales from `src/locales/`.
@@ -196,6 +225,8 @@ One definition each — these were previously copied between dashboards and drif
   open offer.
 - **`src/lib/deviceFields.ts`** — `DEVICE_BRANDS`, `WARRANTY_MONTHS`, `DeviceRecord`.
 - **`src/lib/language.ts`** — `toggleLanguage()`.
+- **`src/lib/pwa.ts`** — installing the app on a device: service-worker registration, the captured
+  install prompt, and platform/browser detection.
 - **`src/lib/portalAccess.ts`** — `issuePortalAccess()`; grants 360 access or re-issues a lost
   one-time login link via the `create-user` edge function's `invite` mode.
 
@@ -214,6 +245,7 @@ One definition each — these were previously copied between dashboards and drif
 - `Toast` / `useToast` — `showToast(message, 'success' | 'error' | 'warning')`.
 - `Logo` — custom SVG shield with wrench/gear.
 - `PrintableInvoice` — bilingual printable invoice overlay (print + WhatsApp share).
+- `GetAppPage` — the public install page at `/download` (see "Installable app").
 - `CustomerNextStep` — the post-registration "what's next?" actions (offer / installation / visit /
   offer decision / offer print / portal access), as a row dropdown or a card list.
 - `DeviceModal` — one form for registering and editing a `customer_devices` row.
