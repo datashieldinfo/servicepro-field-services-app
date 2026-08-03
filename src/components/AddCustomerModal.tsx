@@ -11,6 +11,7 @@ import {
   composeAddress,
   customerDisplayName,
   emptyCustomerForm,
+  splitPhone,
   validateCustomer,
   type CustomerForm,
 } from '../lib/customerFields';
@@ -22,14 +23,22 @@ interface Props {
   onCreated: () => void;
   /** Optional — renders the "import instead" shortcut in the header. */
   onOpenImport?: () => void;
+  /** Registering an unknown caller: their number is already known. */
+  presetPhone?: string;
 }
 
-export default function AddCustomerModal({ onClose, onCreated, onOpenImport }: Props) {
+export default function AddCustomerModal({ onClose, onCreated, onOpenImport, presetPhone }: Props) {
   const { t, i18n } = useTranslation();
   const { showToast } = useToast();
   const isAr = i18n.language === 'ar';
 
-  const [form, setForm]     = useState<CustomerForm>(emptyCustomerForm());
+  const [form, setForm]     = useState<CustomerForm>(() => {
+    const blank = emptyCustomerForm();
+    if (!presetPhone) return blank;
+    /* Came from the caller lookup — keep the number that was ringing. */
+    const { country_code, phone } = splitPhone(presetPhone);
+    return { ...blank, country_code, phone };
+  });
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerForm, string>>>({});
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState<

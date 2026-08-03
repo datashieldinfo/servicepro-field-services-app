@@ -6,9 +6,11 @@ import { UserRole } from '../lib/supabase';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRole?: UserRole;
+  /** For screens more than one role shares, such as the caller lookup. */
+  allowedRoles?: UserRole[];
 }
 
-export function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, allowedRole, allowedRoles }: ProtectedRouteProps) {
   const { user, profile, loading } = useAuth();
 
   if (loading) {
@@ -27,7 +29,9 @@ export function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
   // An invited account must choose its own password before it can go anywhere.
   if (profile?.must_change_password) return <ChangePasswordGate />;
 
-  if (allowedRole && profile?.role !== allowedRole) {
+  const permitted = allowedRoles ?? (allowedRole ? [allowedRole] : null);
+
+  if (permitted && !permitted.includes(profile?.role as UserRole)) {
     const roleRoutes: Record<UserRole, string> = {
       owner: '/dashboard/owner',
       technician: '/dashboard/technician',

@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import {
   Sparkles, ChevronDown, FileSpreadsheet, PackagePlus, CalendarPlus, CheckCircle,
   Printer, KeyRound, X, Loader2, Copy, Check, MessageCircle, Mail, Link as LinkIcon,
+  Contact,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
+import { saveToPhoneContacts } from '../lib/vcard';
 import QuotationModal from './QuotationModal';
 import NewInstallationModal from './NewInstallationModal';
 import ScheduleVisitModal from './ScheduleVisitModal';
@@ -20,6 +22,10 @@ export interface NextStepCustomer {
   phone?: string | null;
   email?: string | null;
   address?: string | null;
+  customer_type?: string | null;
+  company_name?: string | null;
+  contact_person_name?: string | null;
+  contact_person_phone?: string | null;
   /** Present when the customer already has a 360 login. */
   user_id?: string | null;
   portal_access?: boolean | null;
@@ -224,6 +230,28 @@ export default function CustomerNextStep({
     desc: t('customerForm.scheduleVisitDesc'),
     tone: 'orange',
     run: () => setStep('visit'),
+  });
+
+  choices.push({
+    key: 'contact',
+    icon: Contact,
+    title: t('vcard.saveToPhone'),
+    desc: t('vcard.saveToPhoneDesc'),
+    tone: 'slate',
+    run: async () => {
+      const how = await saveToPhoneContacts({
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email,
+        address: customer.address,
+        customer_type: customer.customer_type,
+        company_name: customer.company_name,
+        contact_person_name: customer.contact_person_name,
+        contact_person_phone: customer.contact_person_phone,
+      });
+      showToast(how === 'shared' ? t('vcard.shared') : t('vcard.downloaded'), 'success');
+    },
   });
 
   if (showPortalAccess) {

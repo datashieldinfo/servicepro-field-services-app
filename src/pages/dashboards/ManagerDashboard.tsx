@@ -3,7 +3,7 @@ import {
   Users, Calendar, Receipt, FileText, Cpu, Package, MessageSquare, UserCog,
   Bell, ClipboardList, Search, Eye, Plus, Loader2, AlertTriangle, CheckCircle,
   TrendingUp, Save, Pencil, Upload, ChevronDown, ChevronLeft, Phone,
-  Sparkles, FileSpreadsheet, Printer,
+  Sparkles, FileSpreadsheet, Printer, Contact,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Navbar from '../../components/Navbar';
@@ -34,6 +34,7 @@ import {
   waitingFor,
 } from '../../lib/statusMeta';
 import { loadCustomerActionState, type OpenOffer } from '../../lib/customerActionState';
+import { downloadVCardBook } from '../../lib/vcard';
 import { type CustomerStatus } from '../../lib/statusMeta';
 import { fmtDate, whatsAppLink } from '../../lib/format';
 import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
@@ -658,7 +659,21 @@ export default function ManagerDashboard() {
         {/* ── CUSTOMERS (master data hub → Customer 360) ── */}
         {tab === 'customers' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-4 border-b border-slate-100">
+            <div className="p-4 border-b border-slate-100 space-y-3">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    downloadVCardBook(filteredCustomers.map(c => ({
+                      id: c.id, name: c.name, phone: c.phone, email: c.email, address: c.address,
+                    })));
+                    showToast(t('vcard.bookDownloaded', { count: filteredCustomers.length }), 'success');
+                  }}
+                  title={t('vcard.exportBookDesc')}
+                  className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition"
+                >
+                  <Contact className="w-3 h-3" /> {t('vcard.exportBook')}
+                </button>
+              </div>
               <div className="relative">
                 <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
