@@ -1,4 +1,4 @@
-import { LogOut, Globe, Search, Download } from 'lucide-react';
+import { LogOut, Globe, Search, Download, PhoneCall } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -65,6 +65,17 @@ export default function Navbar() {
             >
               <Search className="w-4 h-4" />
             </button>
+
+            {/* Who is calling — number in, customer record out */}
+            {role !== 'customer' && (
+              <button
+                onClick={() => navigate('/lookup')}
+                title={t('lookup.title')}
+                className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-navy hover:text-white flex items-center justify-center text-slate-500 transition"
+              >
+                <PhoneCall className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Install the app */}
             {!installed && (

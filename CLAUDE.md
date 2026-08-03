@@ -220,6 +220,39 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
   last fill (date, who booked it, who it came from), nearest expiry, low-stock and expiry warnings,
   the full movement history, and a form to book a movement.
 
+### Who is calling — phone lookup + phone contacts
+
+The office answers on the landline and technicians answer on their own mobiles,
+so the caller has to be recognisable on both.
+
+- **DB:** `20260803000001_customer_phone_lookup.sql` adds generated, indexed
+  `customers.phone_key` and `contact_phone_key`. The rule: digits only → drop
+  `00962`/`962` → drop leading zeros → last 9. Dropping the country code *before*
+  the zeros is what makes landlines work — `+962 6 551 2345` and `06 551 2345`
+  are one line, but their last nine digits differ.
+- **`src/lib/phoneLookup.ts`** — `phoneKey()` **must stay identical to the SQL**
+  or nothing matches; plus `findCustomersByPhone()` (matches the customer's own
+  number or their contact person's) and `formatPhone()`.
+- **`LookupPage`** (`/lookup`) — reached three ways, all ending at the 360
+  record: `?c=<id>` from a saved phone contact, `?phone=…` from the phone system
+  or a paste, or typing digits. One match opens straight away, several show a
+  shortlist with status badges, none offers to register the caller with the
+  number already filled in (`AddCustomerModal presetPhone`). Open to every
+  office role via `ProtectedRoute allowedRoles`, and reachable from the phone
+  button in `Navbar`.
+- **`src/lib/vcard.ts`** — the mirror of the `.vcf` importer: `buildVCard()`,
+  `buildVCardBook()`, `saveToPhoneContacts()` (Web Share first, download
+  otherwise), `downloadVCardBook()`. Cards are vCard 3.0 with CRLF, names
+  prefixed `ServisGo —`, and the 360 link in `URL` — so a saved contact shows
+  the customer's name when they ring and is one tap from their record.
+- Saving one customer is an action in `CustomerNextStep` (so it appears on every
+  screen that lists customers); the whole book exports from the Manager and
+  Admin customer tabs.
+- **Not possible from the PWA:** opening a page by itself when the phone rings —
+  no browser exposes call state. The automatic version needs the office line to
+  pass through a PBX that can call a webhook (planned next), or a native Android
+  app. iOS gives apps no access to the incoming number at all.
+
 ### Customer status
 
 - **`customerStatus()`** in `src/lib/statusMeta.ts` derives where a customer stands from their

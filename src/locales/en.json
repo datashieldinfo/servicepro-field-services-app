@@ -1194,5 +1194,26 @@
     "reason_consumption": "Used on a job",
     "reason_damage": "Damaged",
     "reason_adjustment": "Adjustment"
+  },
+  "lookup": {
+    "title": "Who is calling",
+    "subtitle": "Type or paste the number and the customer's record opens.",
+    "placeholder": "07 7806 8705 or +962 77 806 8705",
+    "search": "Find",
+    "matchHint": "Matched on the last 9 digits, so spaces, dashes, 07… and +962… all work.",
+    "noMatch": "No customer has this number",
+    "registerCaller": "Register this caller",
+    "matchCount": "{{count}} matching customer",
+    "matchCount_plural": "{{count}} matching customers",
+    "viaContactPerson": "Matched the contact person: {{name}}"
+  },
+  "vcard": {
+    "saveToPhone": "Save to phone contacts",
+    "saveToPhoneDesc": "Their name then shows when they call, and the card links back here.",
+    "shared": "Contact card ready — choose Contacts to save it",
+    "downloaded": "Contact card downloaded — open it to add the customer to your phone",
+    "exportBook": "Export contacts",
+    "exportBookDesc": "One .vcf file with every customer in the list, to import into a phone",
+    "bookDownloaded": "{{count}} customers exported — open the file on the phone to import them"
   }
 }

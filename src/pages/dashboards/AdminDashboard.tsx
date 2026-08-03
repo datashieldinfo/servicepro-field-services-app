@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle, Package, ChevronRight, Zap, Wrench, MessageSquare,
   Droplets, HelpCircle, X, Loader2, SlidersHorizontal, Download, ChevronDown,
   ChevronUp, ArrowUpDown, TrendingUp, Receipt, Cpu, UserCog, MessageCircle, Upload, Pencil, FileText,
-  FileSpreadsheet, Sparkles,
+  FileSpreadsheet, Sparkles, Contact,
   PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -29,6 +29,7 @@ import ContractModal, { type ContractRecord } from '../../components/ContractMod
 import DeviceModal from '../../components/DeviceModal';
 import InventoryItemCard, { type InventoryItem } from '../../components/InventoryItemCard';
 import { downloadCsv, whatsAppLink } from '../../lib/format';
+import { downloadVCardBook } from '../../lib/vcard';
 import { fetchInvoices, invoiceEmbeds, startOfMonth, toInvoiceData } from '../../lib/invoiceRows';
 import { confirmAppointment, dismissServiceRequest, markInvoicePaid, setInventoryQuantity } from '../../lib/operations';
 
@@ -646,6 +647,18 @@ export default function AdminDashboard() {
     return { label: hours > 0 ? `${hours}h ${totalMins % 60}m` : `${totalMins}m`, urgent: false };
   }
 
+  /* One file the whole team imports once, so every caller has a name. */
+  function exportCustomerContacts() {
+    downloadVCardBook(filteredCustomers.map(c => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      email: c.email,
+      address: c.address,
+    })));
+    showToast(t('vcard.bookDownloaded', { count: filteredCustomers.length }), 'success');
+  }
+
   function exportCustomersCSV() {
     const headers = [t('admin.customerName'), t('admin.phone'), 'Email', t('admin.lastService'), t('admin.nextAppointment')];
     const rows = filteredCustomers.map(c => [
@@ -1256,6 +1269,13 @@ export default function AdminDashboard() {
                         className="ps-9 pe-4 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-orange-500 w-40"
                       />
                     </div>
+                    <button
+                      onClick={exportCustomerContacts}
+                      title={t('vcard.exportBookDesc')}
+                      className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap"
+                    >
+                      <Contact className="w-3 h-3" /> {t('vcard.exportBook')}
+                    </button>
                     <button
                       onClick={() => setContractModal({})}
                       className="flex items-center gap-1.5 bg-navy hover:bg-navy/90 text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap"
