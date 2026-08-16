@@ -220,6 +220,34 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
   last fill (date, who booked it, who it came from), nearest expiry, low-stock and expiry warnings,
   the full movement history, and a form to book a movement.
 
+### Multi-tenancy and module access (20260804)
+
+**One deployment, many companies, and a permission matrix per person.**
+
+- **DB:** `20260804000001_tenants_and_module_permissions.sql` adds `tenants`, the `modules`
+  catalogue, `tenant_modules` (what a company bought), `permission_sets` +
+  `permission_set_modules` (module × view/create/edit/delete), `profile_module_overrides`
+  (one tick for one person), and on `profiles`: `tenant_id`, `permission_set_id`,
+  `is_platform_admin`, `active`. Every company-owned table gains `tenant_id`, backfilled to the
+  founding tenant, and a BEFORE INSERT trigger fills it from the writer — **no screen passes
+  tenant_id**, which is what stops leaks.
+- **`20260804000002_tenant_scoped_rls.sql` rewrites every policy.** It must replace rather than
+  add: policies are OR-ed, and the database previously carried several `USING (true)` policies
+  (customers, appointments, invoices read; invoices update; job_tasks; notifications) that let any
+  signed-in account — including a customer portal login — read the whole book. Those are gone.
+- **Three layers, each only able to narrow:** `tenant_modules` → `permission_sets` →
+  `profile_module_overrides`. Resolved in `can_module(module, action)`; `my_permissions()` returns
+  the whole answer for the client in one call.
+- **`writes_own_only()`** backs the technician default: a set flagged `own_records_only` may only
+  write rows that are its own work (their appointments and the job rows under them).
+- **A platform admin** (`is_platform_admin`) is above every tenant and is the only account not
+  scoped. `seed_tenant_defaults()` copies the five standard sets to a new company.
+- **UI:** `src/lib/permissions.ts` + `AuthContext` expose `tenant`, `permissions`, `isPlatformAdmin`
+  and `can(module, action)`. `PlatformAdminPage` (`/platform`) creates companies, switches their
+  modules and suspends them. `AccessControlPage` (`/access`) edits permission sets, assigns them to
+  people, and sets per-person exceptions (allow / follow the set / deny).
+- **Hiding a button is courtesy, not security** — every rule is enforced by RLS as well.
+
 ### Who is calling — phone lookup + phone contacts
 
 The office answers on the landline and technicians answer on their own mobiles,

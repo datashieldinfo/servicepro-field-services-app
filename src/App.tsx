@@ -6,6 +6,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import LoginPage from './pages/LoginPage';
 import GetAppPage from './pages/GetAppPage';
 import LookupPage from './pages/LookupPage';
+import PlatformAdminPage from './pages/PlatformAdminPage';
+import AccessControlPage from './pages/AccessControlPage';
 import NotFoundPage from './pages/NotFoundPage';
 import OwnerDashboard from './pages/dashboards/OwnerDashboard';
 import TechnicianDashboard from './pages/dashboards/TechnicianDashboard';
@@ -45,6 +47,24 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'technician']}>
                   <ErrorBoundary><LookupPage /></ErrorBoundary>
+                </ProtectedRoute>
+              }
+            />
+            {/* Ours: the companies on this deployment and what each one has. */}
+            <Route
+              path="/platform"
+              element={
+                <ProtectedRoute>
+                  <ErrorBoundary><PlatformAdminPage /></ErrorBoundary>
+                </ProtectedRoute>
+              }
+            />
+            {/* Theirs: who inside the company may open what. */}
+            <Route
+              path="/access"
+              element={
+                <ProtectedRoute allowedRoles={['owner', 'admin', 'manager']}>
+                  <ErrorBoundary><AccessControlPage /></ErrorBoundary>
                 </ProtectedRoute>
               }
             />

@@ -1,4 +1,4 @@
-import { LogOut, Globe, Search, Download, PhoneCall } from 'lucide-react';
+import { LogOut, Globe, Search, Download, PhoneCall, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +18,7 @@ const ROLE_CONFIG: Record<UserRole, { bg: string; text: string; dot: string }> =
 };
 
 export default function Navbar() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, can, isPlatformAdmin, tenant } = useAuth();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const role = profile?.role ?? 'customer';
@@ -66,8 +66,28 @@ export default function Navbar() {
               <Search className="w-4 h-4" />
             </button>
 
+            {/* Access control, and the platform's own screen above it */}
+            {isPlatformAdmin && (
+              <button
+                onClick={() => navigate('/platform')}
+                title={t('platform.title')}
+                className="w-9 h-9 rounded-xl bg-gold/15 hover:bg-gold hover:text-white flex items-center justify-center text-amber-700 transition"
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </button>
+            )}
+            {!isPlatformAdmin && can('team') && (
+              <button
+                onClick={() => navigate('/access')}
+                title={t('access.title')}
+                className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-navy hover:text-white flex items-center justify-center text-slate-500 transition"
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </button>
+            )}
+
             {/* Who is calling — number in, customer record out */}
-            {role !== 'customer' && (
+            {role !== 'customer' && can('lookup') && (
               <button
                 onClick={() => navigate('/lookup')}
                 title={t('lookup.title')}
@@ -111,8 +131,13 @@ export default function Navbar() {
                 </p>
                 <span className={`inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md ${config.bg} ${config.text}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
-                  {t(`roles.${role}`)}
+                  {isPlatformAdmin ? t('platform.platformAdmin') : t(`roles.${role}`)}
                 </span>
+                {tenant && (
+                  <span className="block text-[10px] text-slate-400 truncate max-w-[9rem]">
+                    {isAr ? tenant.name_ar || tenant.name : tenant.name}
+                  </span>
+                )}
               </div>
             </div>
 
