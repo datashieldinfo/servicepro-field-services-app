@@ -145,6 +145,9 @@ BEGIN
     tbl := specs[i][1];
     mod := specs[i][2];
 
+    /* A policy on a table without RLS enabled is decoration. */
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+
     EXECUTE format($f$
       CREATE POLICY %I ON %I FOR SELECT TO authenticated
         USING (
@@ -248,6 +251,8 @@ CREATE POLICY service_requests_portal_insert ON service_requests
   WITH CHECK (customer_id IN (SELECT public.my_customer_ids()));
 
 /* ── 4. notifications belong to one person, not to a module ─────────────── */
+
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY notifications_own_read ON notifications
   FOR SELECT TO authenticated
@@ -367,6 +372,8 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.profiles', r.policyname);
   END LOOP;
 END $$;
+
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY profiles_read ON profiles FOR SELECT TO authenticated
   USING (id = auth.uid()

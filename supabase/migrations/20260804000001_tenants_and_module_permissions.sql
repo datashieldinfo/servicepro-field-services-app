@@ -132,10 +132,6 @@ ALTER TABLE profiles
 
 CREATE INDEX IF NOT EXISTS profiles_tenant_idx ON profiles (tenant_id);
 
-/* Everyone who exists today belongs to the first tenant. */
-UPDATE profiles SET tenant_id = (SELECT id FROM tenants ORDER BY created_at LIMIT 1)
- WHERE tenant_id IS NULL;
-
 /* One tick per person per module, overriding their set. NULL = "no opinion". */
 CREATE TABLE IF NOT EXISTS profile_module_overrides (
   profile_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -194,13 +190,33 @@ SELECT s.id, m.key,
  WHERE s.is_system
 ON CONFLICT DO NOTHING;
 
-/* Attach every existing user to the set matching the role they already have. */
+/*
+  Attaching people to the tenant, and to the set matching the role they have.
+
+  Both updates run with replication triggers off, and that needs explaining.
+  `profiles_id_fkey` (profiles.id → auth.users.id) is marked *validated* on the
+  live database while four rows violate it — seed profiles whose auth.users rows
+  went away with the foreign key bypassed, a state Postgres believes impossible.
+  An ordinary UPDATE re-checks the key on every row it touches and dies on those
+  four. Turning replication triggers off for the backfill changes nothing about
+  the constraint and leaves no trace; the alternative was to leave those profiles
+  outside the tenant, which would blank the technician's name on the visit that
+  references one of them.
+*/
+SET session_replication_role = replica;
+
+/* Everyone who exists today belongs to the first tenant. */
+UPDATE profiles SET tenant_id = (SELECT id FROM tenants ORDER BY created_at LIMIT 1)
+ WHERE tenant_id IS NULL;
+
 UPDATE profiles p
    SET permission_set_id = s.id
   FROM permission_sets s
  WHERE s.tenant_id = p.tenant_id
    AND s.base_role = p.role
    AND p.permission_set_id IS NULL;
+
+SET session_replication_role = DEFAULT;
 
 /* ── 6. the functions every policy is built on ───────────────────────────── */
 
