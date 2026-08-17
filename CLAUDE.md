@@ -248,6 +248,36 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
   people, and sets per-person exceptions (allow / follow the set / deny).
 - **Hiding a button is courtesy, not security** — every rule is enforced by RLS as well.
 
+### The superadmin, and viewing the app as someone else (20260805)
+
+- **DB:** `20260805000001_platform_admin_and_impersonation.sql`. `platform_admin_emails` names the
+  account (`datashield.info@gmail.com`); a BEFORE INSERT trigger on `profiles` re-applies the flag if
+  that user is ever recreated, so it cannot be lost by deleting and re-inviting.
+- **`acting_uid()` replaces `auth.uid()` wherever access is decided** — `current_tenant_id()`,
+  `is_platform_admin()`, `can_module()`, `my_customer_ids()`, `writes_own_only()`, and every policy
+  that asks "is this row mine?". That is what makes impersonation real: the rows returned are the
+  rows that user would have received, not a repainted screen.
+- **`is_platform_admin()` answers false while impersonating.** The superadmin genuinely loses their
+  own reach for the duration — that is the point, and it is why `/platform` and `/access` bounce them
+  to the target's dashboard mid-session. `is_real_platform_admin()` is the one that stays true, and
+  it guards the impersonation controls themselves.
+- **Guard rails:** read-only by default (a RESTRICTIVE policy per table refuses every write unless
+  the session was started with `allow_changes`), expires after 60 minutes on its own, a platform
+  admin can never be impersonated, and `impersonation_log` records who, whom, why and when.
+  `guard_privileged_profile_columns()` stops anyone writing `is_platform_admin` or the impersonation
+  columns directly — only `start_impersonation()` / `stop_impersonation()` do, and they check first.
+  Stopping is keyed on the real `auth.uid()` and is SECURITY DEFINER, so the way back is never
+  blocked by the restrictions being imposed.
+- **`src/lib/impersonation.ts`** — start/stop/read the state, `platform_directory()` (everyone with
+  their email, superadmin only) and `impersonation_history()`.
+- **`AuthContext`** exposes `realProfile` (the account) alongside `profile` (whoever it is acting
+  as), plus `impersonation`, `viewAs()`, `stopViewingAs()` and `isSuperadmin`.
+- **`ImpersonationBanner`** renders above every page, with the countdown and two ways back.
+- **UI:** `/platform` gained a people list per company (name, role, email) with **View as**, a link
+  to that company's access screen, the allow-changes switch and the audit log. `/access` gained a
+  **company picker** for the superadmin (`?tenant=<id>`) — without it, an unscoped list showed every
+  company's people in one pile — and a View-as action per person.
+
 ### Who is calling — phone lookup + phone contacts
 
 The office answers on the landline and technicians answer on their own mobiles,

@@ -76,7 +76,7 @@ export default function Navbar() {
                 <ShieldCheck className="w-4 h-4" />
               </button>
             )}
-            {!isPlatformAdmin && can('team') && (
+            {can('team') && (
               <button
                 onClick={() => navigate('/access')}
                 title={t('access.title')}

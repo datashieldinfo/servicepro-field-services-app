@@ -1236,7 +1236,10 @@
     "status_trial": "Trial",
     "status_active": "Active",
     "status_suspended": "Suspended",
-    "status_closed": "Closed"
+    "status_closed": "Closed",
+    "manageAccess": "Set access",
+    "people": "People",
+    "inactive": "inactive"
   },
   "access": {
     "title": "Team & access",
@@ -1264,5 +1267,21 @@
     "readOnly": "You can see this screen but not change it.",
     "savedImmediately": "Every tick saves immediately.",
     "notAllowed": "You do not have access to team and permissions."
+  },
+  "impersonate": {
+    "viewAs": "View as",
+    "banner": "You are viewing the app as {{name}} ({{role}})",
+    "readOnly": "Read only",
+    "canChange": "Changes allowed",
+    "minutesLeft": "{{count}} min left",
+    "lapsed": "Session ended",
+    "stop": "Back to my account",
+    "started": "Now viewing as that user",
+    "log": "View-as history",
+    "noneYet": "Nobody has been viewed as yet.",
+    "open": "open",
+    "allowChanges": "Allow changes while viewing as",
+    "allowChangesOn": "The next session may create and edit records as that user. Everything is logged.",
+    "allowChangesOff": "Sessions are read-only: the database refuses every write while viewing as someone else."
   }
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Check, KeyRound, Loader2, Lock, Minus, Plus, RotateCcw, Save, ShieldCheck, UserCog, X,
+  Building2, Check, Eye, KeyRound, Loader2, Lock, Minus, Plus, RotateCcw, Save,
+  ShieldCheck, UserCog, X,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,27 +28,35 @@ interface OverrideRow {
   can_view: boolean | null; can_create: boolean | null;
   can_edit: boolean | null; can_delete: boolean | null;
 }
+interface TenantOption { id: string; name: string; name_ar: string | null }
 
 const FIELD: Record<ModuleAction, keyof Omit<SetModuleRow, 'set_id' | 'module_key'>> = {
   view: 'can_view', create: 'can_create', edit: 'can_edit', delete: 'can_delete',
 };
 
 /**
- * Who in this company may open what.
+ * Who in a company may open what.
  *
  * Two halves, in the order the office thinks about them: the permission sets —
  * "what a technician may do" — and then the people, each on a set, with the
  * option of one exception for one person.
  *
- * Everything here only narrows what the platform already sold this tenant; a
+ * Everything here only narrows what the platform already sold that tenant; a
  * module their plan does not include cannot be ticked back on from this screen.
+ *
+ * An owner sees their own company and has no choice to make. A superadmin picks
+ * the company first — `?tenant=<id>`, which is where the platform screen links
+ * to — because their access spans all of them and an unscoped list would be
+ * every company's people in one pile.
  */
 export default function AccessControlPage() {
   const { t, i18n } = useTranslation();
-  const { can, tenant } = useAuth();
+  const { can, tenant, isPlatformAdmin, viewAs } = useAuth();
   const { showToast } = useToast();
   const isAr = i18n.language === 'ar';
 
+  const [params, setParams] = useSearchParams();
+  const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [tenantModules, setTenantModules] = useState<Set<string>>(new Set());
   const [sets, setSets] = useState<SetRow[]>([]);
@@ -61,15 +71,45 @@ export default function AccessControlPage() {
 
   const editable = can('team', 'edit');
 
+  /* The company being edited: the picker's for a superadmin, your own otherwise. */
+  const chosen = params.get('tenant');
+  const scopeId = isPlatformAdmin ? (chosen ?? tenants[0]?.id ?? null) : tenant?.id ?? null;
+
+  /* A superadmin needs the list of companies before anything else can load. */
+  useEffect(() => {
+    if (!isPlatformAdmin) return;
+    supabase.from('tenants').select('id, name, name_ar').order('created_at')
+      .then(({ data }) => setTenants((data ?? []) as TenantOption[]));
+  }, [isPlatformAdmin]);
+
   const load = useCallback(async () => {
+    if (!scopeId) { setLoading(false); return; }
     setLoading(true);
-    const [modRes, tenantModRes, setRes, rightRes, peopleRes, overrideRes] = await Promise.all([
+
+    /* Sets first: their ids scope the rights, and the people scope the
+       exceptions. RLS would already do this for an owner — it is a superadmin,
+       who legitimately sees every tenant, that needs the query itself scoped. */
+    const [modRes, tenantModRes, setRes, peopleRes] = await Promise.all([
       supabase.from('modules').select('key, label_en, label_ar, core, sort').order('sort'),
-      supabase.from('tenant_modules').select('module_key, enabled'),
-      supabase.from('permission_sets').select('id, name, name_ar, description, is_system, base_role, own_records_only').order('name'),
-      supabase.from('permission_set_modules').select('*'),
-      supabase.from('profiles').select('id, full_name, role, permission_set_id, active').order('full_name'),
-      supabase.from('profile_module_overrides').select('*'),
+      supabase.from('tenant_modules').select('module_key, enabled').eq('tenant_id', scopeId),
+      supabase.from('permission_sets')
+        .select('id, name, name_ar, description, is_system, base_role, own_records_only')
+        .eq('tenant_id', scopeId).order('name'),
+      supabase.from('profiles')
+        .select('id, full_name, role, permission_set_id, active')
+        .eq('tenant_id', scopeId).order('full_name'),
+    ]);
+
+    const setRows = (setRes.data ?? []) as SetRow[];
+    const peopleRows = ((peopleRes.data ?? []) as PersonRow[]).filter(p => p.role !== 'customer');
+
+    const [rightRes, overrideRes] = await Promise.all([
+      setRows.length
+        ? supabase.from('permission_set_modules').select('*').in('set_id', setRows.map(s => s.id))
+        : Promise.resolve({ data: [] }),
+      peopleRows.length
+        ? supabase.from('profile_module_overrides').select('*').in('profile_id', peopleRows.map(p => p.id))
+        : Promise.resolve({ data: [] }),
     ]);
 
     setModules((modRes.data ?? []) as ModuleRow[]);
@@ -77,14 +117,14 @@ export default function AccessControlPage() {
       ((tenantModRes.data ?? []) as { module_key: string; enabled: boolean }[])
         .filter(r => r.enabled).map(r => r.module_key)
     ));
-    const setRows = (setRes.data ?? []) as SetRow[];
     setSets(setRows);
+    setPeople(peopleRows);
     setRights((rightRes.data ?? []) as SetModuleRow[]);
-    setPeople(((peopleRes.data ?? []) as PersonRow[]).filter(p => p.role !== 'customer'));
     setOverrides((overrideRes.data ?? []) as OverrideRow[]);
-    setActiveSet(current => current ?? setRows[0]?.id ?? null);
+    setActiveSet(current =>
+      current && setRows.some(s => s.id === current) ? current : setRows[0]?.id ?? null);
     setLoading(false);
-  }, []);
+  }, [scopeId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -157,13 +197,20 @@ export default function AccessControlPage() {
     });
   }
 
+  /** Look at the app as this person sees it — read-only, and logged. */
+  async function view(personId: string) {
+    const error = await viewAs(personId, false, 'From the access screen');
+    if (error) { showToast(error, 'error'); return; }
+    showToast(t('impersonate.started'), 'success');
+  }
+
   async function createSet(e: React.FormEvent) {
     e.preventDefault();
-    if (!newSetName.trim() || !tenant) return;
+    if (!newSetName.trim() || !scopeId) return;
     setSaving(true);
     const { data, error } = await supabase
       .from('permission_sets')
-      .insert({ tenant_id: tenant.id, name: newSetName.trim(), is_system: false })
+      .insert({ tenant_id: scopeId, name: newSetName.trim(), is_system: false })
       .select('id')
       .single();
     setSaving(false);
@@ -195,16 +242,34 @@ export default function AccessControlPage() {
       <Navbar />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-navy/10 flex items-center justify-center">
-            <ShieldCheck className="w-5 h-5 text-navy" />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-navy/10 flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5 text-navy" />
+            </div>
+            <div>
+              <h1 className="font-bold text-slate-900">{t('access.title')}</h1>
+              <p className="text-xs text-slate-500">
+                {tenant ? (isAr ? tenant.name_ar || tenant.name : tenant.name) : t('access.subtitle')}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-slate-900">{t('access.title')}</h1>
-            <p className="text-xs text-slate-500">
-              {tenant ? (isAr ? tenant.name_ar || tenant.name : tenant.name) : t('access.subtitle')}
-            </p>
-          </div>
+
+          {/* Whose company's access is on screen. Only a superadmin has a choice. */}
+          {isPlatformAdmin && (
+            <label className="flex items-center gap-2 text-xs text-slate-500">
+              <Building2 className="w-3.5 h-3.5" />
+              <select
+                value={scopeId ?? ''}
+                onChange={e => setParams({ tenant: e.target.value })}
+                className="border border-slate-200 rounded-lg px-3 py-1.5 text-xs bg-white font-semibold text-slate-700"
+              >
+                {tenants.map(row => (
+                  <option key={row.id} value={row.id}>{isAr ? row.name_ar || row.name : row.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
         {loading ? (
@@ -352,6 +417,17 @@ export default function AccessControlPage() {
                           >
                             {open ? t('common.close') : t('access.exceptions')}
                           </button>
+                          {/* Reading the matrix tells you what they may open;
+                              this shows you what they actually get. */}
+                          {isPlatformAdmin && (
+                            <button
+                              onClick={() => view(person.id)}
+                              title={t('impersonate.viewAs')}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 transition"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> {t('impersonate.viewAs')}
+                            </button>
+                          )}
                         </div>
                       </div>
 
