@@ -13,5 +13,10 @@ export interface Profile {
   role: UserRole;
   phone: string;
   must_change_password?: boolean;
+  /** The company this account belongs to; null only for a platform admin. */
+  tenant_id?: string | null;
+  permission_set_id?: string | null;
+  is_platform_admin?: boolean;
+  active?: boolean;
   created_at: string;
 }

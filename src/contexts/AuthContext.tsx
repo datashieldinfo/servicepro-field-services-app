@@ -1,11 +1,23 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, Profile } from '../lib/supabase';
+import {
+  allows, fetchMyPermissions, fetchMyTenant,
+  type ModuleAction, type ModuleKey, type PermissionMap, type TenantSummary,
+} from '../lib/permissions';
 
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  /** The company this user belongs to; null for a platform admin. */
+  tenant: TenantSummary | null;
+  /** Every module, already resolved through all three permission layers. */
+  permissions: PermissionMap;
+  /** Above every tenant — us, not a customer. */
+  isPlatformAdmin: boolean;
+  /** Hides what the user may not do. The database refuses it regardless. */
+  can: (module: ModuleKey, action?: ModuleAction) => boolean;
   loading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -17,6 +29,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [tenant, setTenant] = useState<TenantSummary | null>(null);
+  const [permissions, setPermissions] = useState<PermissionMap>({});
   const [loading, setLoading] = useState(true);
 
   async function fetchProfile(userId: string) {
@@ -26,6 +40,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', userId)
       .maybeSingle();
     setProfile(data);
+
+    /* Who they work for, and what they may open. */
+    const [map, company] = await Promise.all([
+      fetchMyPermissions(),
+      fetchMyTenant(data?.tenant_id),
+    ]);
+    setPermissions(map);
+    setTenant(company);
   }
 
   async function refreshProfile() {
@@ -53,6 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })();
       } else {
         setProfile(null);
+        setTenant(null);
+        setPermissions({});
         setLoading(false);
       }
     });
@@ -64,8 +88,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }
 
+  const isPlatformAdmin = Boolean(profile?.is_platform_admin);
+
+  /* A platform admin is not inside a tenant, so nothing is hidden from them. */
+  function can(module: ModuleKey, action: ModuleAction = 'view'): boolean {
+    return isPlatformAdmin || allows(permissions, module, action);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{
+      user, session, profile, tenant, permissions, isPlatformAdmin, can,
+      loading, signOut, refreshProfile,
+    }}>
       {children}
     </AuthContext.Provider>
   );
