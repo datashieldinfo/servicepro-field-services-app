@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import {
-  Building2, Check, Loader2, Plus, Save, ShieldCheck, ToggleLeft, ToggleRight, Users, X,
+  Building2, Check, Eye, History, KeyRound, Loader2, Plus, Save, ShieldCheck,
+  ToggleLeft, ToggleRight, Users, X,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
-import { fmtDate } from '../lib/format';
+import { fmtDate, fmtDateTime } from '../lib/format';
+import {
+  fetchDirectory, fetchImpersonationHistory,
+  type DirectoryPerson, type ImpersonationEntry,
+} from '../lib/impersonation';
 
 interface TenantRow {
   id: string;
@@ -34,7 +40,8 @@ const STATUSES = ['trial', 'active', 'suspended', 'closed'];
  */
 export default function PlatformAdminPage() {
   const { t, i18n } = useTranslation();
-  const { isPlatformAdmin } = useAuth();
+  const navigate = useNavigate();
+  const { isPlatformAdmin, viewAs } = useAuth();
   const { showToast } = useToast();
   const isAr = i18n.language === 'ar';
 
@@ -42,6 +49,10 @@ export default function PlatformAdminPage() {
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [enabled, setEnabled] = useState<Record<string, Set<string>>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [directory, setDirectory] = useState<DirectoryPerson[]>([]);
+  const [history, setHistory] = useState<ImpersonationEntry[]>([]);
+  const [openPeople, setOpenPeople] = useState<string | null>(null);
+  const [allowChanges, setAllowChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -49,15 +60,20 @@ export default function PlatformAdminPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [tenantRes, moduleRes, linkRes, peopleRes] = await Promise.all([
+    const [tenantRes, moduleRes, linkRes, people, log] = await Promise.all([
       supabase.from('tenants').select('*').order('created_at'),
       supabase.from('modules').select('key, label_en, label_ar, core, sort').order('sort'),
       supabase.from('tenant_modules').select('tenant_id, module_key, enabled'),
-      supabase.from('profiles').select('tenant_id'),
+      /* Through a function, because the email lives in auth.users and is not
+         readable from the client any other way. */
+      fetchDirectory(),
+      fetchImpersonationHistory(25),
     ]);
 
     setTenants((tenantRes.data ?? []) as TenantRow[]);
     setModules((moduleRes.data ?? []) as ModuleRow[]);
+    setDirectory(people);
+    setHistory(log);
 
     const map: Record<string, Set<string>> = {};
     ((linkRes.data ?? []) as { tenant_id: string; module_key: string; enabled: boolean }[])
@@ -67,11 +83,11 @@ export default function PlatformAdminPage() {
       });
     setEnabled(map);
 
-    const people: Record<string, number> = {};
-    ((peopleRes.data ?? []) as { tenant_id: string | null }[]).forEach(row => {
-      if (row.tenant_id) people[row.tenant_id] = (people[row.tenant_id] ?? 0) + 1;
+    const tally: Record<string, number> = {};
+    people.forEach(row => {
+      if (row.tenant_id) tally[row.tenant_id] = (tally[row.tenant_id] ?? 0) + 1;
     });
-    setCounts(people);
+    setCounts(tally);
     setLoading(false);
   }, []);
 
@@ -95,6 +111,17 @@ export default function PlatformAdminPage() {
     if (error) { showToast(error.message, 'error'); return; }
     setTenants(prev => prev.map(row => (row.id === tenant.id ? { ...row, status } : row)));
     showToast(t('platform.statusChanged', { name: tenant.name }), 'success');
+  }
+
+  /**
+   * Open the app as this person — with their access, their company and nothing
+   * else. Root then routes to whichever dashboard their role belongs to.
+   */
+  async function view(person: DirectoryPerson) {
+    const error = await viewAs(person.id, allowChanges, 'From the platform screen');
+    if (error) { showToast(error, 'error'); return; }
+    showToast(t('impersonate.started'), 'success');
+    navigate('/');
   }
 
   async function createTenant(e: React.FormEvent) {
@@ -278,9 +305,118 @@ export default function PlatformAdminPage() {
                 <Check className="w-3 h-3 mt-0.5 shrink-0" />
                 {t('platform.moduleHint')}
               </p>
+
+              {/* The two things to do with a company once it exists: set who
+                  inside it may open what, and check that it worked. */}
+              <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100 flex-wrap">
+                <button
+                  onClick={() => navigate(`/access?tenant=${tenant.id}`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-navy/5 text-navy hover:bg-navy/10 transition"
+                >
+                  <KeyRound className="w-3.5 h-3.5" /> {t('platform.manageAccess')}
+                </button>
+                <button
+                  onClick={() => setOpenPeople(openPeople === tenant.id ? null : tenant.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  {openPeople === tenant.id ? t('common.close') : t('platform.people')}
+                </button>
+              </div>
+
+              {openPeople === tenant.id && (
+                <div className="mt-3 rounded-xl border border-slate-100 overflow-hidden">
+                  <div className="divide-y divide-slate-100">
+                    {directory.filter(p => p.tenant_id === tenant.id).map(person => (
+                      <div key={person.id} className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">
+                            {person.full_name || '—'}
+                            {!person.active && (
+                              <span className="ms-2 text-[10px] font-bold text-slate-400">
+                                {t('platform.inactive')}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {t(`roles.${person.role}`, person.role)}
+                            {person.email && <span dir="ltr"> · {person.email}</span>}
+                          </p>
+                        </div>
+                        {person.is_platform_admin ? (
+                          <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3" /> {t('platform.platformAdmin')}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => view(person)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 transition"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> {t('impersonate.viewAs')}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {directory.filter(p => p.tenant_id === tenant.id).length === 0 && (
+                      <p className="px-4 py-6 text-center text-xs text-slate-400">{t('common.noData')}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         ))}
+
+        {/* How a "view as" session behaves, and every one that has happened. */}
+        {!loading && tenants.length > 0 && (
+          <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+              <p className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <History className="w-4 h-4 text-slate-400" /> {t('impersonate.log')}
+              </p>
+              <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowChanges}
+                  onChange={e => setAllowChanges(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300"
+                />
+                {t('impersonate.allowChanges')}
+              </label>
+            </div>
+
+            <p className="px-5 py-2.5 text-[11px] text-slate-500 bg-slate-50 border-b border-slate-100">
+              {allowChanges ? t('impersonate.allowChangesOn') : t('impersonate.allowChangesOff')}
+            </p>
+
+            <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+              {history.map(entry => (
+                <div key={entry.id} className="px-5 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-xs text-slate-700 min-w-0">
+                    <span className="font-semibold">{entry.actor_name || '—'}</span>
+                    {' → '}
+                    <span className="font-semibold">{entry.target_name || '—'}</span>
+                    {entry.tenant_name && <span className="text-slate-400"> · {entry.tenant_name}</span>}
+                  </p>
+                  <p className="text-[11px] text-slate-500 flex items-center gap-2">
+                    <span className={`px-1.5 py-0.5 rounded font-bold ${
+                      entry.read_only ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {entry.read_only ? t('impersonate.readOnly') : t('impersonate.canChange')}
+                    </span>
+                    <span dir="ltr">{fmtDateTime(entry.started_at)}</span>
+                    {!entry.ended_at && (
+                      <span className="text-green-700 font-bold">{t('impersonate.open')}</span>
+                    )}
+                  </p>
+                </div>
+              ))}
+              {history.length === 0 && (
+                <p className="px-5 py-8 text-center text-xs text-slate-400">{t('impersonate.noneYet')}</p>
+              )}
+            </div>
+          </section>
+        )}
 
         {!loading && tenants.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-100 py-12 text-center text-sm text-slate-400">

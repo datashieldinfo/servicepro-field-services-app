@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './components/Toast';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import ImpersonationBanner from './components/ImpersonationBanner';
 import LoginPage from './pages/LoginPage';
 import GetAppPage from './pages/GetAppPage';
 import LookupPage from './pages/LookupPage';
@@ -35,6 +36,9 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
+          {/* Above every page, because "why is this list empty?" is otherwise
+              the first thing a superadmin asks while viewing as someone else. */}
+          <ImpersonationBanner />
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<LoginPage />} />

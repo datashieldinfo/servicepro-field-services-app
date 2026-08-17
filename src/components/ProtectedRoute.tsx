@@ -11,7 +11,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRole, allowedRoles }: ProtectedRouteProps) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, realProfile, isPlatformAdmin, impersonation, loading } = useAuth();
 
   if (loading) {
     return (
@@ -27,7 +27,14 @@ export function ProtectedRoute({ children, allowedRole, allowedRoles }: Protecte
   if (!user) return <Navigate to="/login" replace />;
 
   // An invited account must choose its own password before it can go anywhere.
-  if (profile?.must_change_password) return <ChangePasswordGate />;
+  // The account itself, note — not whoever a superadmin is currently viewing as,
+  // whose password is theirs to change and nobody else's.
+  if (!impersonation && realProfile?.must_change_password) return <ChangePasswordGate />;
+
+  // A superadmin is above the roles; the screens they open decide for themselves.
+  // While viewing as someone else this is false, so they are routed exactly as
+  // that user would be.
+  if (isPlatformAdmin) return <>{children}</>;
 
   const permitted = allowedRoles ?? (allowedRole ? [allowedRole] : null);
 
