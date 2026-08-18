@@ -1239,7 +1239,17 @@
     "status_closed": "Closed",
     "manageAccess": "Set access",
     "people": "People",
-    "inactive": "inactive"
+    "inactive": "inactive",
+    "ownerLogin": "The company's first login",
+    "ownerEmail": "Login email",
+    "ownerPassword": "Password",
+    "ownerHint": "Created with the company, as its owner. Defaults follow the company name — replace them if the company has a real mailbox.",
+    "ownerFailed": "The company was created, but its owner login was not: {{error}}",
+    "handoverTitle": "{{name}} is ready — hand these over",
+    "copyLogin": "Copy",
+    "sendLogin": "Send on WhatsApp",
+    "copied": "Copied",
+    "handoverWarning": "Shown once. The password cannot be read back — it is stored hashed. Ask them to change it after signing in."
   },
   "access": {
     "title": "Team & access",

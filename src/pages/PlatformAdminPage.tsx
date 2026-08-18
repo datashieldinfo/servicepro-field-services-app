@@ -14,6 +14,8 @@ import {
   fetchDirectory, fetchImpersonationHistory,
   type DirectoryPerson, type ImpersonationEntry,
 } from '../lib/impersonation';
+import { createTenantOwner, defaultOwnerCredentials } from '../lib/tenantOwner';
+import { shareOnWhatsApp } from '../lib/format';
 
 interface TenantRow {
   id: string;
@@ -57,6 +59,17 @@ export default function PlatformAdminPage() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', name_ar: '', slug: '', contact_email: '', contact_phone: '' });
+  /* Typed by hand only if the derived defaults are not wanted. */
+  const [ownerLogin, setOwnerLogin] = useState({ email: '', password: '', touched: false });
+  /* Shown once, after the company exists — this is the hand-over. */
+  const [handover, setHandover] = useState<
+    { company: string; email: string; password: string; link?: string } | null
+  >(null);
+
+  /* The defaults follow the slug until someone types over them. */
+  const derived = defaultOwnerCredentials(form.slug, form.contact_email);
+  const ownerEmail = ownerLogin.touched ? ownerLogin.email : derived.email;
+  const ownerPassword = ownerLogin.touched ? ownerLogin.password : derived.password;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,9 +164,34 @@ export default function PlatformAdminPage() {
     );
     await supabase.rpc('seed_tenant_defaults', { target: data.id });
 
+    /* And the account that can actually open it. Without this the company
+       exists and nobody can sign in to it. */
+    const owner = await createTenantOwner(
+      data.id,
+      form.name.trim(),
+      { email: ownerEmail, password: ownerPassword },
+      form.contact_phone.trim()
+    );
+
     setSaving(false);
+
+    if (!owner.ok) {
+      /* The company is real; only its login failed. Say so precisely — the
+         alternative is a silent company nobody can enter. */
+      showToast(t('platform.ownerFailed', { error: owner.error ?? '' }), 'error');
+      load();
+      return;
+    }
+
     setCreating(false);
+    setHandover({
+      company: form.name.trim(),
+      email: owner.email ?? ownerEmail,
+      password: owner.password ?? ownerPassword,
+      link: owner.loginLink,
+    });
     setForm({ name: '', name_ar: '', slug: '', contact_email: '', contact_phone: '' });
+    setOwnerLogin({ email: '', password: '', touched: false });
     showToast(t('platform.created'), 'success');
     load();
   }
@@ -229,6 +267,31 @@ export default function PlatformAdminPage() {
                 className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm"
               />
             </div>
+            {/* The company's first login, created with it. Editable, because a
+                company with a real mailbox should use it. */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2.5">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                <KeyRound className="w-3 h-3" /> {t('platform.ownerLogin')}
+              </p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <input
+                  value={ownerEmail}
+                  onChange={e => setOwnerLogin({ email: e.target.value, password: ownerPassword, touched: true })}
+                  placeholder={t('platform.ownerEmail')}
+                  dir="ltr"
+                  className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white"
+                />
+                <input
+                  value={ownerPassword}
+                  onChange={e => setOwnerLogin({ email: ownerEmail, password: e.target.value, touched: true })}
+                  placeholder={t('platform.ownerPassword')}
+                  dir="ltr"
+                  className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white font-mono"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500">{t('platform.ownerHint')}</p>
+            </div>
+
             <div className="flex gap-2">
               <button type="button" onClick={() => setCreating(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600">
                 {t('common.cancel')}
@@ -239,6 +302,60 @@ export default function PlatformAdminPage() {
               </button>
             </div>
           </form>
+        )}
+
+        {/* Shown once, right after the company is created: the credentials to
+            hand over. They are not readable again — the password is hashed the
+            moment it is set. */}
+        {handover && (
+          <section className="bg-white rounded-2xl border-2 border-green-200 shadow-sm p-5 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Check className="w-4 h-4 text-green-600" />
+                {t('platform.handoverTitle', { name: handover.company })}
+              </p>
+              <button onClick={() => setHandover(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('platform.ownerEmail')}</p>
+                <p className="text-sm font-mono text-slate-900 break-all" dir="ltr">{handover.email}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('platform.ownerPassword')}</p>
+                <p className="text-sm font-mono text-slate-900 break-all" dir="ltr">{handover.password}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `${window.location.origin}/login\n${handover.email}\n${handover.password}`
+                  );
+                  showToast(t('platform.copied'), 'success');
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-navy/5 text-navy hover:bg-navy/10 transition"
+              >
+                <Save className="w-3.5 h-3.5" /> {t('platform.copyLogin')}
+              </button>
+              <button
+                onClick={() => shareOnWhatsApp(
+                  `${handover.company}\n${window.location.origin}/login\n${handover.email}\n${handover.password}`
+                )}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100 transition"
+              >
+                {t('platform.sendLogin')}
+              </button>
+            </div>
+
+            <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              {t('platform.handoverWarning')}
+            </p>
+          </section>
         )}
 
         {loading ? (
