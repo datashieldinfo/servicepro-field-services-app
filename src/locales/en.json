@@ -1249,7 +1249,10 @@
     "copyLogin": "Copy",
     "sendLogin": "Send on WhatsApp",
     "copied": "Copied",
-    "handoverWarning": "Shown once. The password cannot be read back — it is stored hashed. Ask them to change it after signing in."
+    "handoverWarning": "Shown once. The password cannot be read back — it is stored hashed. Ask them to change it after signing in.",
+    "moveTo": "Move to company…",
+    "moved": "{{name}} moved to {{company}}",
+    "orphans": "Not in any company yet — these people see an empty app"
   },
   "access": {
     "title": "Team & access",
@@ -1293,5 +1296,25 @@
     "allowChanges": "Allow changes while viewing as",
     "allowChangesOn": "The next session may create and edit records as that user. Everything is logged.",
     "allowChangesOff": "Sessions are read-only: the database refuses every write while viewing as someone else."
+  },
+  "staff": {
+    "add": "Add person",
+    "title": "Add somebody to the company",
+    "subtitle": "A new login for this company",
+    "name": "Full name",
+    "email": "Email",
+    "phone": "Phone",
+    "role": "Role",
+    "set": "Permission set",
+    "password": "Temporary password",
+    "passwordHint": "They must change it the first time they sign in.",
+    "create": "Create account",
+    "created": "Account created",
+    "explain": "The account is attached to this company and starts on the permission set above. Change what they can open at any time on this screen.",
+    "copy": "Copy",
+    "send": "Send on WhatsApp",
+    "copied": "Copied",
+    "mustChange": "Shown once. The password cannot be read back — they will be asked to set their own at first sign-in.",
+    "noCompany": "Pick a company first."
   }
 }

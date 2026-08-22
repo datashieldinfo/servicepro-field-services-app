@@ -127,6 +127,37 @@ export default function PlatformAdminPage() {
   }
 
   /**
+   * Move somebody into a company — or into a different one.
+   *
+   * The permission set goes with them: a set belongs to one company, so keeping
+   * the old one would leave them pointing at a set their new colleagues cannot
+   * see. They land on the standard set for their role, which the owner can then
+   * change on the access screen.
+   */
+  async function moveToCompany(person: DirectoryPerson, target: string) {
+    const { data: set } = await supabase
+      .from('permission_sets')
+      .select('id')
+      .eq('tenant_id', target)
+      .eq('base_role', person.role)
+      .eq('is_system', true)
+      .maybeSingle();
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ tenant_id: target, permission_set_id: set?.id ?? null })
+      .eq('id', person.id);
+
+    if (error) { showToast(error.message, 'error'); return; }
+
+    showToast(t('platform.moved', {
+      name: person.full_name || '—',
+      company: tenants.find(x => x.id === target)?.name ?? '',
+    }), 'success');
+    load();
+  }
+
+  /**
    * Open the app as this person — with their access, their company and nothing
    * else. Root then routes to whichever dashboard their role belongs to.
    */
@@ -358,6 +389,39 @@ export default function PlatformAdminPage() {
           </section>
         )}
 
+        {/* Anyone belonging to no company at all. They see an empty app until
+            they are adopted, so they are shown first rather than buried. */}
+        {!loading && directory.some(p => !p.tenant_id) && (
+          <section className="bg-white rounded-2xl shadow-sm border-2 border-amber-200 overflow-hidden">
+            <p className="px-5 py-3.5 border-b border-amber-100 bg-amber-50 font-bold text-amber-900 text-sm">
+              {t('platform.orphans')}
+            </p>
+            <div className="divide-y divide-slate-100">
+              {directory.filter(p => !p.tenant_id).map(person => (
+                <div key={person.id} className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{person.full_name || '—'}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {t(`roles.${person.role}`, person.role)}
+                      {person.email && <span dir="ltr"> · {person.email}</span>}
+                    </p>
+                  </div>
+                  <select
+                    defaultValue=""
+                    onChange={e => e.target.value && moveToCompany(person, e.target.value)}
+                    className="border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-amber-900 font-semibold"
+                  >
+                    <option value="">{t('platform.moveTo')}</option>
+                    {tenants.map(row => (
+                      <option key={row.id} value={row.id}>{isAr ? row.name_ar || row.name : row.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {loading ? (
           <div className="bg-white rounded-2xl border border-slate-100 py-12 flex justify-center">
             <Loader2 className="w-5 h-5 animate-spin text-slate-300" />
@@ -465,12 +529,28 @@ export default function PlatformAdminPage() {
                             <ShieldCheck className="w-3 h-3" /> {t('platform.platformAdmin')}
                           </span>
                         ) : (
-                          <button
-                            onClick={() => view(person)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 transition"
-                          >
-                            <Eye className="w-3.5 h-3.5" /> {t('impersonate.viewAs')}
-                          </button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Moving somebody between companies is a superadmin's
+                                job — nobody inside a company can see another one. */}
+                            <select
+                              value={person.tenant_id ?? ''}
+                              onChange={e => moveToCompany(person, e.target.value)}
+                              title={t('platform.moveTo')}
+                              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-600"
+                            >
+                              {tenants.map(row => (
+                                <option key={row.id} value={row.id}>
+                                  {isAr ? row.name_ar || row.name : row.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => view(person)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 transition"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> {t('impersonate.viewAs')}
+                            </button>
+                          </div>
                         )}
                       </div>
                     ))}

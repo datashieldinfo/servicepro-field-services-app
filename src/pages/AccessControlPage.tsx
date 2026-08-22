@@ -6,6 +6,7 @@ import {
   ShieldCheck, UserCog, X,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
+import AddStaffModal from '../components/AddStaffModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
@@ -68,6 +69,7 @@ export default function AccessControlPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [newSetName, setNewSetName] = useState('');
+  const [adding, setAdding] = useState(false);
 
   const editable = can('team', 'edit');
 
@@ -377,9 +379,19 @@ export default function AccessControlPage() {
 
             {/* ── people ── */}
             <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <p className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm flex items-center gap-2">
-                <UserCog className="w-4 h-4 text-slate-400" /> {t('access.people')}
-              </p>
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+                <p className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <UserCog className="w-4 h-4 text-slate-400" /> {t('access.people')}
+                </p>
+                {editable && scopeId && (
+                  <button
+                    onClick={() => setAdding(true)}
+                    className="flex items-center gap-1.5 bg-navy hover:bg-navy/90 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                  >
+                    <Plus className="w-3 h-3" /> {t('staff.add')}
+                  </button>
+                )}
+              </div>
 
               <div className="divide-y divide-slate-100">
                 {people.map(person => {
@@ -495,6 +507,14 @@ export default function AccessControlPage() {
           </>
         )}
       </main>
+
+      {adding && scopeId && (
+        <AddStaffModal
+          tenantId={scopeId}
+          onClose={() => setAdding(false)}
+          onCreated={load}
+        />
+      )}
     </div>
   );
 }

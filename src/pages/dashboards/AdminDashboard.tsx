@@ -15,7 +15,7 @@ import { supabase } from '../../lib/supabase';
 import PrintableInvoice, { type InvoiceData } from '../../components/PrintableInvoice';
 import AddCustomerModal from '../../components/AddCustomerModal';
 import CustomerFullEditPage from '../../components/CustomerFullEditPage';
-import AddTechnicianModal from '../../components/AddTechnicianModal';
+import AddStaffModal from '../../components/AddStaffModal';
 import ImportCustomersModal from '../../components/ImportCustomersModal';
 import ScheduleVisitModal from '../../components/ScheduleVisitModal';
 import CustomerNextStep from '../../components/CustomerNextStep';
@@ -2214,9 +2214,9 @@ export default function AdminDashboard() {
       />
     )}
 
-    {/* ── Add Technician Modal ── */}
+    {/* ── Add somebody to the company ── */}
     {showAddTechnician && (
-      <AddTechnicianModal
+      <AddStaffModal
         onClose={() => setShowAddTechnician(false)}
         onCreated={() => { loadData(); loadTechnicians(); }}
       />
