@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Check, Eye, KeyRound, Loader2, Lock, Minus, Plus, RotateCcw, Save,
+  Building2, Check, Eye, KeyRound, Loader2, Lock, Minus, Pencil, Plus, RotateCcw, Save,
   ShieldCheck, UserCog, X,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import AddStaffModal from '../components/AddStaffModal';
+import EditStaffModal, { type StaffPerson } from '../components/EditStaffModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
@@ -70,6 +71,7 @@ export default function AccessControlPage() {
   const [saving, setSaving] = useState(false);
   const [newSetName, setNewSetName] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<StaffPerson | null>(null);
 
   const editable = can('team', 'edit');
 
@@ -404,6 +406,11 @@ export default function AccessControlPage() {
                           <p className="font-semibold text-slate-900 text-sm">{person.full_name || '—'}</p>
                           <p className="text-[11px] text-slate-500">
                             {t(`roles.${person.role}`, person.role)}
+                            {!person.active && (
+                              <span className="ms-2 text-amber-700 font-semibold">
+                                {t('staff.isDisabled')}
+                              </span>
+                            )}
                             {mine.length > 0 && (
                               <span className="ms-2 text-amber-700 font-semibold">
                                 {t('access.overrideCount', { count: mine.length })}
@@ -423,6 +430,14 @@ export default function AccessControlPage() {
                               <option key={s.id} value={s.id}>{isAr ? s.name_ar || s.name : s.name}</option>
                             ))}
                           </select>
+                          {editable && (
+                            <button
+                              onClick={() => setEditing(person)}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-navy/5 text-navy hover:bg-navy/10 transition"
+                            >
+                              <Pencil className="w-3.5 h-3.5" /> {t('staff.manage')}
+                            </button>
+                          )}
                           <button
                             onClick={() => setOpenPerson(open ? null : person.id)}
                             className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-navy/10 text-slate-600 hover:text-navy transition"
@@ -513,6 +528,15 @@ export default function AccessControlPage() {
           tenantId={scopeId}
           onClose={() => setAdding(false)}
           onCreated={load}
+        />
+      )}
+
+      {editing && (
+        <EditStaffModal
+          person={editing}
+          sets={sets}
+          onClose={() => setEditing(null)}
+          onChanged={load}
         />
       )}
     </div>

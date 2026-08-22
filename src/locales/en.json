@@ -1315,6 +1315,25 @@
     "send": "Send on WhatsApp",
     "copied": "Copied",
     "mustChange": "Shown once. The password cannot be read back — they will be asked to set their own at first sign-in.",
-    "noCompany": "Pick a company first."
+    "noCompany": "Pick a company first.",
+    "manage": "Manage",
+    "saved": "Saved",
+    "isDisabled": "disabled",
+    "disable": "Disable this account",
+    "enable": "Enable this account",
+    "disabled": "Account disabled",
+    "enabled": "Account enabled",
+    "disableHint": "A disabled account cannot sign in and disappears from assignment lists. Their history stays exactly as it is.",
+    "newPassword": "Set a new password",
+    "autoPassword": "Leave blank to generate one",
+    "reset": "Set",
+    "passwordReset": "Password changed",
+    "resetHint": "They will be asked to choose their own the next time they sign in.",
+    "delete": "Delete this account",
+    "confirmDelete": "Yes, delete",
+    "deleted": "Account deleted",
+    "cannotDelete": "This account cannot be deleted",
+    "cannotDeleteWhy": "It has {{visits}} visits and {{invoices}} invoices against its name — deleting it would leave that history with no author. Disable it instead.",
+    "notOwnRole": "You cannot change your own role."
   }
 }
