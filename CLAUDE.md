@@ -278,6 +278,23 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
   **company picker** for the superadmin (`?tenant=<id>`) — without it, an unscoped list showed every
   company's people in one pile — and a View-as action per person.
 
+### Adding people to a company (20260818)
+
+- **The tenant must be carried explicitly through `create-user`.** The edge function runs as the
+  service role, which belongs to no company; `set_tenant_id` copies the *writer's* tenant, and for
+  the service role that is nobody. Every account and customer it created would have landed with
+  `tenant_id` NULL — invisible to the office that created it, and shown an empty app on sign-in.
+  `targetTenant` is taken from the caller (or named by a platform admin) and written onto the
+  profile, the customers row and the portal login.
+- **Who may create whom.** The function's own check admits every owner, manager and office admin,
+  which is right for hiring a technician and wrong for minting an owner. `mayCreate` limits each
+  role to at or below its own level; a platform admin is exempt.
+- **`AddStaffModal`** replaces the technician-only form: any role the caller is allowed to create,
+  with the permission set chosen at creation (defaulting to the company's standard set for that
+  role) and the credentials shown once. Used by `AccessControlPage` and `AdminDashboard`.
+- **`/platform` moves people between companies** — the permission set moves with them, because a set
+  belongs to one company. Anyone with no company at all is listed first, in amber, to be adopted.
+
 ### Who is calling — phone lookup + phone contacts
 
 The office answers on the landline and technicians answer on their own mobiles,

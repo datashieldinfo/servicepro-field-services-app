@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
     const { data: callerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('role, is_platform_admin')
+      .select('role, is_platform_admin, tenant_id')
       .eq('id', callerUser.id)
       .single();
 
@@ -59,8 +59,27 @@ Deno.serve(async (req) => {
     const {
       type, email, password, full_name, phone, address, customer,
       redirect_to, must_change_password = true,
-      mode = 'create', customer_id, tenant_id,
+      mode = 'create', customer_id, tenant_id, permission_set_id,
     } = await req.json();
+
+    /*
+      WHICH COMPANY THE NEW ROW BELONGS TO.
+
+      This function runs as the service role, which belongs to no company. The
+      database fills `tenant_id` from whoever is writing — and for the service
+      role that is nobody, so every account and customer created here would land
+      with no company: invisible to the office that created it, and shown an
+      empty app when they sign in. So the tenant is carried explicitly, taken
+      from the caller. Only a platform admin may name a different one.
+    */
+    const targetTenant: string | null =
+      (callerProfile.is_platform_admin && tenant_id) ? tenant_id : callerProfile.tenant_id ?? null;
+
+    if (!targetTenant) {
+      return new Response(JSON.stringify({
+        error: 'Your account is not attached to a company, so this record would belong to nobody.',
+      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     /** A one-time magic link, or null when Supabase refused to mint one. */
     const makeLink = async (forEmail: string): Promise<string | null> => {
@@ -171,7 +190,12 @@ Deno.serve(async (req) => {
       }
 
       const invitedId = invited.user.id;
-      const invitedProfile: Record<string, unknown> = { must_change_password };
+      const invitedProfile: Record<string, unknown> = {
+        must_change_password,
+        /* The portal login belongs to the same company as the customer record. */
+        tenant_id: targetTenant,
+        active: true,
+      };
       if (existingCustomer.phone) invitedProfile.phone = existingCustomer.phone;
       await supabaseAdmin.from('profiles').update(invitedProfile).eq('id', invitedId);
 
@@ -291,7 +315,56 @@ Deno.serve(async (req) => {
       (n) => 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%'[n % 60],
     ).join('');
 
-    const role = type === 'technician' ? 'technician' : 'customer';
+    /*
+      WHO MAY CREATE WHOM.
+
+      The check at the top of this function admits every owner, manager and
+      office admin, which is right for adding a technician and wrong for adding
+      an owner: a manager who could mint an owner account has just promoted
+      themselves. So each role may only create at or below its own level.
+    */
+    const STAFF = ['owner', 'manager', 'admin', 'technician'];
+    const role = STAFF.includes(type) ? type : 'customer';
+
+    const mayCreate: Record<string, string[]> = {
+      owner:   ['owner', 'manager', 'admin', 'technician', 'customer'],
+      manager: ['technician', 'customer'],
+      admin:   ['technician', 'customer'],
+    };
+
+    if (!callerProfile.is_platform_admin
+        && !(mayCreate[callerProfile.role] ?? []).includes(role)) {
+      return new Response(JSON.stringify({
+        error: `A ${callerProfile.role} cannot create a ${role} account`,
+      }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    /* A permission set belongs to one company; it cannot be borrowed from another. */
+    let setId: string | null = null;
+    if (permission_set_id) {
+      const { data: set } = await supabaseAdmin
+        .from('permission_sets')
+        .select('id')
+        .eq('id', permission_set_id)
+        .eq('tenant_id', targetTenant)
+        .maybeSingle();
+      if (!set) {
+        return new Response(JSON.stringify({ error: 'That permission set belongs to a different company' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      setId = set.id;
+    } else {
+      /* Fall back to the company's standard set for this role. */
+      const { data: fallback } = await supabaseAdmin
+        .from('permission_sets')
+        .select('id')
+        .eq('tenant_id', targetTenant)
+        .eq('base_role', role)
+        .eq('is_system', true)
+        .maybeSingle();
+      setId = fallback?.id ?? null;
+    }
 
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -310,7 +383,14 @@ Deno.serve(async (req) => {
     const userId = newUser.user.id;
 
     // The profile row is auto-created by the handle_new_user trigger; complete it.
-    const profilePatch: Record<string, unknown> = { must_change_password };
+    // The tenant and the permission set are the important part — without them the
+    // account signs in to an empty app.
+    const profilePatch: Record<string, unknown> = {
+      must_change_password,
+      tenant_id: targetTenant,
+      permission_set_id: setId,
+      active: true,
+    };
     if (phone) profilePatch.phone = phone;
     await supabaseAdmin.from('profiles').update(profilePatch).eq('id', userId);
 
@@ -345,6 +425,7 @@ Deno.serve(async (req) => {
 
       const { error: custError } = await supabaseAdmin.from('customers').insert({
         user_id: userId,
+        tenant_id: targetTenant,
         name: full_name,
         email,
         phone: phone ?? '',
