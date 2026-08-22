@@ -295,6 +295,26 @@ The success screen of `AddCustomerModal` offers three next steps, all reusable e
 - **`/platform` moves people between companies** — the permission set moves with them, because a set
   belongs to one company. Anyone with no company at all is listed first, in amber, to be adopted.
 
+### Managing people who already exist (20260822)
+
+- **`manage-user` edge function** — edit, disable, re-enable, reset password, delete. Creating a
+  login needs the service role and so does taking one away: the browser can flip a column, but only
+  the service role bans an account or removes it from `auth.users`.
+- **Every guard is in the function, not the screen.** The caller's `team` edit right is asked as
+  *them* (`can_module`, so their set and personal exceptions both count); the target must be in the
+  caller's own company; a platform account cannot be touched from a company screen; each role may
+  only act on roles at or below its own; nobody may disable, delete or re-role themselves.
+- **`hasLogin`** — not every profile has an `auth.users` row behind it (old seed rows, customers
+  registered without portal access). Without checking, the auth API answers "User not found", which
+  explains nothing. Disable then flips `active` alone, delete removes the profile row directly, and
+  a password reset says plainly that there is no login to change.
+- **Disable is the normal action, delete is the exception.** Disabling bans the login and clears
+  `active`, so `can_module()` refuses them everywhere and they cannot sign in — while their history
+  keeps its author. Delete is refused for an account with visits, invoices or a customer record
+  against it, and the screen says how many rather than failing on a foreign key.
+- **`EditStaffModal`** is where all of it lives, opened from the people list on `/access`;
+  `src/lib/staffAdmin.ts` is the single client path to the function.
+
 ### Who is calling — phone lookup + phone contacts
 
 The office answers on the landline and technicians answer on their own mobiles,
