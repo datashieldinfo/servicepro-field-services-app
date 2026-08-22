@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
     const { data: callerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('role')
+      .select('role, is_platform_admin')
       .eq('id', callerUser.id)
       .single();
 
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
     const {
       type, email, password, full_name, phone, address, customer,
       redirect_to, must_change_password = true,
-      mode = 'create', customer_id,
+      mode = 'create', customer_id, tenant_id,
     } = await req.json();
 
     /** A one-time magic link, or null when Supabase refused to mint one. */
@@ -197,6 +197,92 @@ Deno.serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    /*
+      A new company's first login.
+
+      Creating a company from the platform screen used to leave nobody able to
+      open it: the modules and the permission sets existed, and no account did.
+      This is the account — the owner of that company, attached to their tenant
+      and to its Owner permission set, with no customers row because they are
+      not a customer.
+
+      Only a platform admin may ask for it. The role check above lets in every
+      tenant owner, which is right for creating their own staff and wrong for
+      creating an owner inside a company that is not theirs.
+    */
+    if (type === 'tenant_owner') {
+      if (!callerProfile.is_platform_admin) {
+        return new Response(JSON.stringify({ error: 'Only a platform admin may create a company owner' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!tenant_id) {
+        return new Response(JSON.stringify({ error: 'tenant_id is required for a company owner' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const ownerPassword = password ?? Array.from(
+        crypto.getRandomValues(new Uint32Array(14)),
+        (n) => 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%'[n % 60],
+      ).join('');
+
+      const { data: created, error: ownerError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: ownerPassword,
+        email_confirm: true,
+        user_metadata: { full_name, role: 'owner', must_change_password },
+      });
+
+      if (ownerError || !created.user) {
+        return new Response(JSON.stringify({ error: ownerError?.message ?? 'Failed to create the owner account' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      /* `handle_new_user` made the profile; it cannot know the tenant, because
+         the service role has no tenant of its own for the trigger to copy. */
+      const { data: ownerSet } = await supabaseAdmin
+        .from('permission_sets')
+        .select('id')
+        .eq('tenant_id', tenant_id)
+        .eq('base_role', 'owner')
+        .eq('is_system', true)
+        .maybeSingle();
+
+      const { error: patchError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          tenant_id,
+          permission_set_id: ownerSet?.id ?? null,
+          full_name,
+          phone: phone ?? '',
+          must_change_password,
+          active: true,
+        })
+        .eq('id', created.user.id);
+
+      if (patchError) {
+        return new Response(JSON.stringify({
+          error: `Account created but not attached to the company: ${patchError.message}`,
+        }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      return new Response(
+        JSON.stringify({
+          user: { id: created.user.id, email: created.user.email },
+          email,
+          password: ownerPassword,
+          login_link: await makeLink(email),
+          created: true,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // The UI no longer asks for a password — generate one when it is omitted.
