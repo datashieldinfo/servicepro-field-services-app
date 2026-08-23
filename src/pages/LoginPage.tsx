@@ -69,13 +69,13 @@ async function seedCustomerDemoData(userId: string) {
   ]);
 }
 
-const ROLE_ROUTES: Record<UserRole, string> = {
-  owner: '/dashboard/owner',
-  technician: '/dashboard/technician',
-  admin: '/dashboard/admin',
-  customer: '/dashboard/customer',
-  manager: '/dashboard/manager',
-};
+/*
+  Where to go after signing in is decided in exactly one place — `RootRedirect`
+  in App.tsx, which reads the loaded profile. This page used to map the role to
+  a dashboard itself, which is how a platform admin ended up on the owner
+  dashboard: the copy here knew about roles and nothing about the platform.
+*/
+const AFTER_LOGIN = '/';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -107,13 +107,7 @@ export default function LoginPage() {
       return;
     }
     if (data.user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .maybeSingle();
-      const role = (profile?.role ?? 'customer') as UserRole;
-      navigate(ROLE_ROUTES[role]);
+      navigate(AFTER_LOGIN);
     }
     setLoading(false);
   }
@@ -160,10 +154,10 @@ export default function LoginPage() {
           await seedCustomerDemoData(userId);
         }
 
-        navigate(ROLE_ROUTES[role]);
+        navigate(AFTER_LOGIN);
       }
     } else if (data.user) {
-      navigate(ROLE_ROUTES[role]);
+      navigate(AFTER_LOGIN);
     }
 
     setDemoLoading(null);

@@ -18,9 +18,15 @@ import ManagerDashboard from './pages/dashboards/ManagerDashboard';
 import ReportsPage from './pages/ReportsPage';
 
 function RootRedirect() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, isPlatformAdmin, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
+
+  /* A platform admin belongs to the platform, not to a company dashboard.
+     While viewing the app as somebody else this is false, so they land where
+     that person would. */
+  if (isPlatformAdmin) return <Navigate to="/platform" replace />;
+
   const roleRoutes: Record<string, string> = {
     owner: '/dashboard/owner',
     technician: '/dashboard/technician',
